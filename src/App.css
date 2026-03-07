@@ -1,0 +1,122 @@
+/* ── Neon green dark theme ── */
+:root {
+  --ng: #39ff14;
+  --ng50: rgba(57,255,20,0.50);
+  --ng20: rgba(57,255,20,0.20);
+  --ng08: rgba(57,255,20,0.08);
+  --bg: #080808;
+  --panel: #111111;
+  --border: #1e1e1e;
+  --text: #39ff14;
+  --muted: rgba(57,255,20,0.45);
+}
+
+body { background: var(--bg); color: var(--text); }
+
+/* ── range sliders ── */
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 3px;
+  background: var(--ng20);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--ng);
+  box-shadow: 0 0 6px var(--ng);
+  cursor: pointer;
+}
+input[type=range]::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: none;
+  border-radius: 50%;
+  background: var(--ng);
+  box-shadow: 0 0 6px var(--ng);
+  cursor: pointer;
+}
+
+/* ── checkboxes ── */
+input[type=checkbox] {
+  accent-color: var(--ng);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+/* ── number inputs ── */
+input[type=number] {
+  background: #0d0d0d;
+  color: var(--ng);
+  border: 1px solid var(--ng20);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  width: 100%;
+  outline: none;
+}
+input[type=number]:focus { border-color: var(--ng50); }
+
+/* ── file inputs ── */
+input[type=file] {
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+input[type=file]::file-selector-button {
+  background: #0d0d0d;
+  color: var(--ng);
+  border: 1px solid var(--ng20);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  margin-right: 8px;
+}
+input[type=file]::file-selector-button:hover {
+  border-color: var(--ng);
+}
+
+/* ── color pickers ── */
+input[type=color] {
+  border: 1px solid var(--ng20) !important;
+  background: #0d0d0d;
+  cursor: pointer;
+  padding: 2px;
+}
+input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+
+/* ── audio element ── */
+audio {
+  width: 100%;
+  filter: invert(1) hue-rotate(90deg) saturate(3);
+  margin-top: 6px;
+}
+
+/* ── textarea ── */
+textarea {
+  background: #0a0a0a !important;
+  color: var(--ng) !important;
+  border: 1px solid var(--ng20) !important;
+  font-family: "Courier New", monospace !important;
+  resize: none;
+}
+
+/* ── energy bar ── */
+.energy-bar {
+  display: inline-block;
+  height: 6px;
+  background: var(--ng);
+  border-radius: 3px;
+  box-shadow: 0 0 4px var(--ng);
+  vertical-align: middle;
+  transition: width 0.1s;
+}
