@@ -1373,14 +1373,17 @@ export default function App() {
   const performWinRef = useRef(null);
   const [clips, setClips] = useState([]);
   const [clipStyles, setClipStyles] = useState({}); // id -> style name
+  const [clipBlends, setClipBlends] = useState({}); // id -> blend mode
+  const WARM = "brightness(1.06) saturate(1.35) sepia(0.22)";
   const CLIP_STYLES = {
-    normal:    "",
-    weave:     "sepia(0.55) contrast(1.35) brightness(0.92)",
-    stitch:    "saturate(2) contrast(1.25) hue-rotate(10deg)",
-    chart:     "grayscale(1) contrast(2) brightness(1.05)",
+    warm:      WARM,
+    weave:     "sepia(0.7) contrast(1.4) brightness(0.88)",
+    stitch:    `${WARM} saturate(2.2) contrast(1.3) hue-rotate(10deg)`,
+    chart:     "grayscale(1) contrast(2.5) brightness(1.1)",
     threshold: "grayscale(1) contrast(100)",
-    cmyk:      "brightness(1.3) saturate(1.6) contrast(0.75) hue-rotate(15deg)",
+    cmyk:      "saturate(3) contrast(0.65) brightness(1.4) hue-rotate(200deg)",
   };
+  const BLEND_MODES = ["normal","multiply","screen","overlay","soft-light","difference","luminosity"];
   const clipNextIdRef = useRef(0);
 
   const [grids, setGrids] = useState(() => {
@@ -1996,9 +1999,9 @@ document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F')goFS
 window.addEventListener('message',function(e){
   if(!e.data)return;
   if(e.data.type==='frame'){var c=document.getElementById('pc'),b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();}
-  else if(e.data.type==='addClip')addClip(e.data.id,e.data.dataUrl,e.data.mediaType,e.data.filter||'');
+  else if(e.data.type==='addClip')addClip(e.data.id,e.data.dataUrl,e.data.mediaType,e.data.filter||'',e.data.mix||'normal');
   else if(e.data.type==='removeClip'){var el=document.getElementById('clip-'+e.data.id);if(el)el.remove();}
-  else if(e.data.type==='updateClip'){var el=document.getElementById('clip-'+e.data.id);if(el){var inn=el.querySelector('img,video');if(inn&&e.data.filter!=null)inn.style.filter=e.data.filter;}}
+  else if(e.data.type==='updateClip'){var el=document.getElementById('clip-'+e.data.id);if(el){var inn=el.querySelector('img,video');if(inn&&e.data.filter!=null)inn.style.filter=e.data.filter;if(e.data.mix!=null)el.style.mixBlendMode=e.data.mix;}}
   else if(e.data.type==='setBg'){document.body.style.background=e.data.color;}
 });
 function makeDraggable(div,resize){
@@ -2011,19 +2014,20 @@ function makeDraggable(div,resize){
   window.addEventListener('mousemove',function(e){if(resizing){var dw=e.clientX-rsx;div.style.width=Math.max(40,rsw+dw)+'px';div.style.height=Math.max(40,rsh+dw*(rsh/rsw))+'px';}});
   window.addEventListener('mouseup',function(){resizing=false;});
 }
-function addClip(id,dataUrl,mediaType,filter){
+function addClip(id,dataUrl,mediaType,filter,mix){
   var clips=document.getElementById('clips');
   var div=document.createElement('div');div.id='clip-'+id;div.className='clip';
   div.style.cssText='left:80px;top:80px;width:280px;height:280px;';
+  if(mix&&mix!=='normal')div.style.mixBlendMode=mix;
   var bar=document.createElement('div');bar.className='clip-bar';
   var name=document.createElement('span');name.className='clip-name';name.textContent='clip '+( ++clipNum );bar.appendChild(name);
   var closeBtn=document.createElement('button');closeBtn.className='clip-btn';closeBtn.textContent='×';closeBtn.onclick=function(){div.remove();};bar.appendChild(closeBtn);
   div.appendChild(bar);
   var inner;
-  if(mediaType==='video'){inner=document.createElement('video');inner.src=dataUrl;inner.autoplay=true;inner.loop=true;inner.muted=true;}
+  if(mediaType==='video'){inner=document.createElement('video');inner.src=dataUrl;inner.autoplay=true;inner.loop=true;inner.muted=true;inner.playsInline=true;}
   else{inner=document.createElement('img');inner.src=dataUrl;}
   inner.style.cssText='display:block;width:100%;height:100%;object-fit:contain;';
-  if(filter)inner.style.filter=filter;
+  inner.style.filter=filter||'brightness(1.06) saturate(1.35) sepia(0.22)';
   div.appendChild(inner);
   var resize=document.createElement('div');resize.className='clip-resize';div.appendChild(resize);
   makeDraggable(div,resize);
@@ -2059,8 +2063,9 @@ function addClip(id,dataUrl,mediaType,filter){
 
   function sendClipToPerform(clip) {
     if (!performWinRef.current || performWinRef.current.closed) return;
-    const filter = CLIP_STYLES[clipStyles[clip.id] ?? "normal"] ?? "";
-    performWinRef.current.postMessage({ type: "addClip", id: clip.id + Date.now(), dataUrl: clip.blobUrl, mediaType: clip.type, filter }, "*");
+    const filter = CLIP_STYLES[clipStyles[clip.id] ?? "warm"] ?? WARM;
+    const mix = clipBlends[clip.id] ?? "normal";
+    performWinRef.current.postMessage({ type: "addClip", id: clip.id + Date.now(), dataUrl: clip.blobUrl, mediaType: clip.type, filter, mix }, "*");
   }
 
   const energyAll = useMemo(() => {
@@ -2608,7 +2613,7 @@ function addClip(id,dataUrl,mediaType,filter){
                 }
                 <span style={{ flex: 1, fontSize: 10, color: "#cc99ff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{c.name}</span>
                 <select
-                  value={clipStyles[c.id] ?? "normal"}
+                  value={clipStyles[c.id] ?? "warm"}
                   onChange={e => {
                     const s = e.target.value;
                     setClipStyles(prev => ({ ...prev, [c.id]: s }));
@@ -2618,6 +2623,18 @@ function addClip(id,dataUrl,mediaType,filter){
                   style={{ background: "#1a0033", color: "#cc99ff", border: "1px solid rgba(153,51,255,0.4)", borderRadius: 3, fontSize: 9, padding: "1px 2px", cursor: "pointer" }}
                 >
                   {Object.keys(CLIP_STYLES).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <select
+                  value={clipBlends[c.id] ?? "normal"}
+                  onChange={e => {
+                    const m = e.target.value;
+                    setClipBlends(prev => ({ ...prev, [c.id]: m }));
+                    if (performWinRef.current && !performWinRef.current.closed)
+                      performWinRef.current.postMessage({ type: "updateClip", id: c.id, mix: m }, "*");
+                  }}
+                  style={{ background: "#1a0033", color: "#cc99ff", border: "1px solid rgba(153,51,255,0.4)", borderRadius: 3, fontSize: 9, padding: "1px 2px", cursor: "pointer" }}
+                >
+                  {BLEND_MODES.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
                 <button onClick={() => sendClipToPerform(c)}
                   style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", padding: "2px 5px", fontSize: 10 }} title="send to perform">⬡</button>
