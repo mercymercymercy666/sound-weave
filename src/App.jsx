@@ -1243,6 +1243,26 @@ const DEFAULT_LAYER_BAND_COLORS = {
 };
 const IDS = ["A", "B", "C", "D", "F", "G", "H"];
 
+// Poster font options — includes user-requested + stitch-friendly Google Fonts
+const POSTER_FONTS = [
+  { label: "Serif",            value: "serif" },
+  { label: "Sans-serif",       value: "sans-serif" },
+  { label: "Monospace",        value: "monospace" },
+  { label: "Baskerville",      value: "'Libre Baskerville', Baskerville, serif" },
+  { label: "Futura / Jost",    value: "Futura, Jost, 'Century Gothic', sans-serif" },
+  { label: "Alte Haas",        value: "'Alte Haas Grotesk', 'Helvetica Neue', Arial, sans-serif" },
+  { label: "Comhencium",       value: "Comhencium, serif" },
+  { label: "Council",          value: "Council, serif" },
+  { label: "Courier Prime",    value: "'Courier Prime', 'Courier New', monospace" },
+  { label: "Josefin Sans",     value: "'Josefin Sans', sans-serif" },
+  { label: "Cinzel",           value: "Cinzel, serif" },
+  { label: "Playfair Display", value: "'Playfair Display', serif" },
+  { label: "Cormorant",        value: "'Cormorant Garamond', serif" },
+  { label: "IM Fell English",  value: "'IM Fell English', serif" },
+  { label: "Special Elite",    value: "'Special Elite', cursive" },
+  { label: "Bebas Neue",       value: "'Bebas Neue', sans-serif" },
+];
+
 export default function App() {
   const [layerColors, setLayerColors] = useState(DEFAULT_LAYER_BAND_COLORS);
   const [layerBand, setLayerBand] = useState({ A:"all", B:"all", C:"all", D:"all", F:"all", G:"all", H:"all" });
@@ -2527,7 +2547,7 @@ export default function App() {
                     <label style={{ fontSize: 11, color: "#a07040", display: "block" }}>font
                       <select value={posterSelected.fontFamily} onChange={(e) => updatePosterSelected({ fontFamily: e.target.value })}
                         style={{ marginTop: 3, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 12, width: "100%", boxSizing: "border-box" }}>
-                        {["serif", "sans-serif", "monospace", "cursive", "fantasy"].map(f => <option key={f} value={f}>{f}</option>)}
+                        {POSTER_FONTS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                       </select>
                     </label>
                   </div>
