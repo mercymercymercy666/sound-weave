@@ -1363,6 +1363,8 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
+  const [performOpen, setPerformOpen] = useState(false);
+  const performWinRef = useRef(null);
 
   const [grids, setGrids] = useState(() => {
     const o = {};
@@ -1701,6 +1703,36 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cell]);
 
+  // Perform window mirror — composites main + overlay canvas, streams via ImageBitmap
+  useEffect(() => {
+    if (!performOpen) return;
+    let raf;
+    let offCanvas = null;
+    const step = () => {
+      const pw = performWinRef.current;
+      if (!pw || pw.closed) { setPerformOpen(false); return; }
+      const mc = canvasRef.current;
+      const oc = overlayCanvasRef.current;
+      if (!mc) { raf = requestAnimationFrame(step); return; }
+      const W = mc.width, H = mc.height;
+      if (!W || !H) { raf = requestAnimationFrame(step); return; }
+      if (!offCanvas || offCanvas.width !== W || offCanvas.height !== H) {
+        offCanvas = document.createElement("canvas");
+        offCanvas.width = W; offCanvas.height = H;
+      }
+      const ctx = offCanvas.getContext("2d");
+      ctx.drawImage(mc, 0, 0);
+      if (oc && oc.width === W && oc.height === H) ctx.drawImage(oc, 0, 0);
+      createImageBitmap(offCanvas).then(bmp => {
+        if (!pw || pw.closed) { bmp.close(); setPerformOpen(false); return; }
+        pw.postMessage({ type: "frame", bitmap: bmp }, "*", [bmp]);
+      });
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [performOpen]);
+
   function paintAtEvent(e) {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1869,6 +1901,24 @@ export default function App() {
   function stopRecording() {
     mediaRecorderRef.current?.stop();
     setIsRecording(false);
+  }
+
+  function openPerformWindow() {
+    if (performWinRef.current && !performWinRef.current.closed) {
+      performWinRef.current.focus(); return;
+    }
+    const pw = window.open("", "SoundWeavePerform", "popup=1,width=1280,height=720");
+    if (!pw) return;
+    pw.document.write(`<!doctype html><html><head><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#000;overflow:hidden}canvas{display:block;width:100vw;height:100vh;object-fit:contain;image-rendering:pixelated}</style></head><body><canvas id="pc"></canvas><script>window.addEventListener('message',function(e){if(!e.data||e.data.type!=='frame')return;var c=document.getElementById('pc');var b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();});<\/script></body></html>`);
+    pw.document.close();
+    performWinRef.current = pw;
+    setPerformOpen(true);
+  }
+
+  function closePerformWindow() {
+    performWinRef.current?.close();
+    performWinRef.current = null;
+    setPerformOpen(false);
   }
 
   const energyAll = useMemo(() => {
@@ -2107,6 +2157,10 @@ export default function App() {
                 {isRecording
                   ? <button onClick={stopRecording} style={{ ...btn(true), background: "#ff2222", borderColor: "#ff2222", color: "#fff", boxShadow: "0 0 10px #ff2222" }}>stop rec</button>
                   : <button onClick={startRecording} style={{ ...btn(false), boxShadow: `0 0 6px ${NG}` }}>record</button>
+                }
+                {performOpen
+                  ? <button onClick={closePerformWindow} style={{ ...btn(true), background: "#6600cc", borderColor: "#9933ff", color: "#fff", boxShadow: "0 0 10px #9933ff" }}>✕ perform</button>
+                  : <button onClick={openPerformWindow} style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", boxShadow: "0 0 6px #9933ff44" }}>⬡ perform</button>
                 }
                 <button onClick={() => setPosterOpen(o => !o)}
                   style={{ ...btn(posterOpen), borderColor: posterOpen ? NG : "#c8a96e", color: posterOpen ? "#000" : "#c8a96e" }}>
