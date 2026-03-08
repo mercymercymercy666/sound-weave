@@ -245,10 +245,19 @@ function drawWeave(canvas, grids, layers, bgImg, cell, opts = {}) {
         ctx.globalAlpha = 0.92;
         ctx.drawImage(maskImg, srcX, srcY, srcW > 0 ? srcW : maskImg.naturalWidth / cols,
           srcW > 0 ? srcH : maskImg.naturalHeight / rows, xp, yp, cw, ch);
-        // Subtle layer color tint over mask image
-        ctx.globalAlpha = 0.22;
+        // Subtle layer color tint over mask image — multiply so image shows through
+        ctx.globalCompositeOperation = "multiply";
+        ctx.globalAlpha = 0.55;
         ctx.fillStyle = `rgb(${tintR},${tintG},${tintB})`;
         ctx.fillRect(xp, yp, cw, ch);
+        ctx.globalCompositeOperation = "source-over";
+      } else if (audioActive && bgImg) {
+        // Audio-active + bgImg: use multiply so image pixel always visible under color
+        ctx.globalCompositeOperation = "multiply";
+        ctx.globalAlpha = Math.min(tintA, 0.60);
+        ctx.fillStyle = `rgb(${tintR},${tintG},${tintB})`;
+        ctx.fillRect(xp, yp, cw, ch);
+        ctx.globalCompositeOperation = "source-over";
       } else {
         // 2b. Posterized color tint (normal path)
         ctx.globalAlpha = tintA;
@@ -396,8 +405,22 @@ function drawLace(canvas, grids, layers, bgImg, cell, opts = {}) {
         ctx.fillStyle = `rgba(255,255,255,${alpha * 0.35})`; ctx.fill();
         ctx.restore();
       } else {
-        ctx.beginPath(); ctx.arc(cx, cy, stRadius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${stR},${stG},${stB},${alpha})`; ctx.fill();
+        // Base fill: audio-active + bgImg → blend image through circle, multiply tint
+        if (audioActive && bgImg) {
+          ctx.save();
+          ctx.beginPath(); ctx.arc(cx, cy, stRadius, 0, Math.PI * 2); ctx.clip();
+          const iw = bgImg.naturalWidth || W, ih = bgImg.naturalHeight || H;
+          const imgSc = Math.max(W / iw, H / ih);
+          ctx.drawImage(bgImg, (W - iw * imgSc) / 2, (H - ih * imgSc) / 2, iw * imgSc, ih * imgSc);
+          ctx.globalCompositeOperation = "multiply";
+          ctx.globalAlpha = Math.min(alpha, 0.60);
+          ctx.fillStyle = `rgb(${stR},${stG},${stB})`; ctx.fill();
+          ctx.globalCompositeOperation = "source-over";
+          ctx.restore();
+        } else {
+          ctx.beginPath(); ctx.arc(cx, cy, stRadius, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${stR},${stG},${stB},${alpha})`; ctx.fill();
+        }
         // Mask image reveal on audio-active stitches
         if (audioActive && maskImg) {
           ctx.save();
@@ -522,19 +545,46 @@ function drawChart(canvas, grids, layers, bgImg, cell, opts = {}) {
 
       if (filled) {
         // ── Filled knit stitch ──
-        // Drop shadow before base fill
-        ctx.save();
-        ctx.shadowColor = "rgba(0,0,0,0.75)";
-        ctx.shadowBlur = Math.max(2, sw * 0.35);
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = Math.max(1, sw * 0.18);
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = `rgb(${tR},${tG},${tB})`;
-        ctx.beginPath();
-        if (rad > 0) ctx.roundRect(px, py, sw, sh, rad);
-        else ctx.rect(px, py, sw, sh);
-        ctx.fill();
-        ctx.restore();
+        if (audioActive && bgImg) {
+          // Drop shadow pass (shape only, transparent fill)
+          ctx.save();
+          ctx.shadowColor = "rgba(0,0,0,0.75)";
+          ctx.shadowBlur = Math.max(2, sw * 0.35);
+          ctx.shadowOffsetY = Math.max(1, sw * 0.18);
+          ctx.globalAlpha = 0.01;
+          ctx.fillStyle = "rgba(0,0,0,0)";
+          ctx.beginPath();
+          if (rad > 0) ctx.roundRect(px, py, sw, sh, rad); else ctx.rect(px, py, sw, sh);
+          ctx.fill();
+          ctx.restore();
+          // bgImg clipped to stitch + multiply tint — image pixel always visible
+          ctx.save();
+          ctx.beginPath();
+          if (rad > 0) ctx.roundRect(px, py, sw, sh, rad); else ctx.rect(px, py, sw, sh);
+          ctx.clip();
+          const iw2 = bgImg.naturalWidth || W, ih2 = bgImg.naturalHeight || H;
+          const imgSc2 = Math.max(W / iw2, H / ih2);
+          ctx.drawImage(bgImg, (W - iw2 * imgSc2) / 2, (H - ih2 * imgSc2) / 2, iw2 * imgSc2, ih2 * imgSc2);
+          ctx.globalCompositeOperation = "multiply";
+          ctx.globalAlpha = Math.min(alpha, 0.60);
+          ctx.fillStyle = `rgb(${tR},${tG},${tB})`; ctx.fill();
+          ctx.globalCompositeOperation = "source-over";
+          ctx.restore();
+        } else {
+          // Drop shadow before base fill
+          ctx.save();
+          ctx.shadowColor = "rgba(0,0,0,0.75)";
+          ctx.shadowBlur = Math.max(2, sw * 0.35);
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = Math.max(1, sw * 0.18);
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = `rgb(${tR},${tG},${tB})`;
+          ctx.beginPath();
+          if (rad > 0) ctx.roundRect(px, py, sw, sh, rad);
+          else ctx.rect(px, py, sw, sh);
+          ctx.fill();
+          ctx.restore();
+        }
 
         // Thin border stroke for definition
         ctx.globalAlpha = alpha * 0.5;
@@ -754,17 +804,19 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
     const colorStr = `rgba(${lr},${lg},${lb},1)`;
 
     ctx.fillStyle = colorStr;
-    ctx.globalAlpha = 0.25;
+    ctx.globalCompositeOperation = bgImg ? "multiply" : "source-over";
+    ctx.globalAlpha = bgImg ? 0.55 : 0.25;
     for (let y = 0; y < rows; y++) {
       const row = grid01[y]; if (!row) continue;
       for (let x = 0; x < cols; x++)
         if (row[x] === 1) ctx.fillRect(x * cell + pad, y * cell + pad, cell - pad * 2, cell - pad * 2);
     }
+    ctx.globalCompositeOperation = "source-over";
 
     ctx.strokeStyle = colorStr;
     ctx.lineWidth = Math.max(1.2, cell * 0.14);
     ctx.lineCap = "round"; ctx.lineJoin = "round";
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = bgImg ? 0.40 : 0.55;
     ctx.beginPath();
     for (let y = 0; y < rows; y++) {
       const row = grid01[y]; if (!row) continue;
@@ -803,6 +855,9 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
   }
 }
 
+// Cached offscreen canvas for drawMediaOverlay — avoids per-frame allocation
+let _mediaOffCanvas = null;
+
 // Reveals a media element (image or video) through a brush-painted mask canvas
 function drawMediaOverlay(canvas, mediaEl, maskCanvas, opacity, blendMode) {
   if (!mediaEl || !maskCanvas) return;
@@ -811,13 +866,18 @@ function drawMediaOverlay(canvas, mediaEl, maskCanvas, opacity, blendMode) {
   const mw = mediaEl.videoWidth ?? mediaEl.naturalWidth ?? W;
   const mh = mediaEl.videoHeight ?? mediaEl.naturalHeight ?? H;
   if (!mw || !mh) return;
-  const off = document.createElement("canvas");
-  off.width = W; off.height = H;
+  if (!_mediaOffCanvas || _mediaOffCanvas.width !== W || _mediaOffCanvas.height !== H) {
+    _mediaOffCanvas = document.createElement("canvas");
+    _mediaOffCanvas.width = W; _mediaOffCanvas.height = H;
+  }
+  const off = _mediaOffCanvas;
   const offCtx = off.getContext("2d");
+  offCtx.clearRect(0, 0, W, H);
   const scale = Math.max(W / mw, H / mh);
   offCtx.drawImage(mediaEl, (W - mw * scale) / 2, (H - mh * scale) / 2, mw * scale, mh * scale);
   offCtx.globalCompositeOperation = "destination-in";
   offCtx.drawImage(maskCanvas, 0, 0, W, H);
+  offCtx.globalCompositeOperation = "source-over";
   const ctx = canvas.getContext("2d");
   ctx.save();
   ctx.globalAlpha = opacity;
