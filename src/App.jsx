@@ -1704,7 +1704,7 @@ export default function App() {
   // Sync perform window background with editInvert
   useEffect(() => {
     const pw = performWinRef.current;
-    if (pw && !pw.closed) pw.postMessage({ type: "setBg", color: editInvert ? "#000000" : "#000000" }, "*");
+    if (pw && !pw.closed) pw.postMessage({ type: "setBg", color: editInvert ? "#ffffff" : "#000000" }, "*");
   }, [editInvert, performOpen]);
 
   // Brush undo — Ctrl+Z restores last mask snapshot
