@@ -1528,15 +1528,7 @@ export default function App() {
     else if (patternMode === "chart")  drawChart(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
     else if (patternMode === "stitch") drawStitch(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
     else                               drawWeave(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
-    // Apply pixel-level invert so it also works in perform window
-    if (editInvert) {
-      const ctx = c.getContext("2d");
-      ctx.globalCompositeOperation = "difference";
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, c.width, c.height);
-      ctx.globalCompositeOperation = "source-over";
-    }
-  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, stitchInvert, editInvert]);
+  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, stitchInvert]);
 
   // Video guide — sample frames into imageGuide at ~15fps
   useEffect(() => {
@@ -1762,6 +1754,12 @@ export default function App() {
         const ob = ovParamRef.current.ovBlend ?? "source-over";
         ctx.globalCompositeOperation = ob;
         ctx.drawImage(oc, 0, 0);
+        ctx.globalCompositeOperation = "source-over";
+      }
+      if (editInvertRef.current) {
+        ctx.globalCompositeOperation = "difference";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, W, H);
         ctx.globalCompositeOperation = "source-over";
       }
       createImageBitmap(offCanvas).then(bmp => {
@@ -2354,7 +2352,7 @@ function addClip(id,dataUrl,mediaType){
                 onMouseMove={(e) => { if (ovActiveTool === "grid" && mouseDown) paintAtEvent(e); }}
                 onMouseUp={() => setMouseDown(false)}
                 onMouseLeave={() => setMouseDown(false)}
-                style={{ display: "block", position: "relative", cursor: ovActiveTool === "grid" ? "crosshair" : "default" }}
+                style={{ display: "block", position: "relative", cursor: ovActiveTool === "grid" ? "crosshair" : "default", filter: editInvert ? "invert(1)" : "none" }}
               />
               {/* notation overlay */}
               <canvas ref={notationCanvasRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
