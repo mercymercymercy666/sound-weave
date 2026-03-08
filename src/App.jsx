@@ -1540,14 +1540,7 @@ export default function App() {
     else if (patternMode === "chart")  drawChart(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
     else if (patternMode === "stitch") drawStitch(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
     else                               drawWeave(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
-    if (editInvert) {
-      const ctx = c.getContext("2d");
-      ctx.globalCompositeOperation = "difference";
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, c.width, c.height);
-      ctx.globalCompositeOperation = "source-over";
-    }
-  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, stitchInvert, editInvert]);
+  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, stitchInvert]);
 
   // Video guide — sample frames into imageGuide at ~15fps
   useEffect(() => {
@@ -1704,7 +1697,10 @@ export default function App() {
   // Sync perform window background with editInvert
   useEffect(() => {
     const pw = performWinRef.current;
-    if (pw && !pw.closed) pw.postMessage({ type: "setBg", color: editInvert ? "#ffffff" : "#000000" }, "*");
+    if (pw && !pw.closed) {
+      pw.postMessage({ type: "setBg", color: editInvert ? "#ffffff" : "#000000" }, "*");
+      pw.postMessage({ type: "setInvert", invert: editInvert }, "*");
+    }
   }, [editInvert, performOpen]);
 
   // Brush undo — Ctrl+Z restores last mask snapshot
@@ -1978,7 +1974,7 @@ export default function App() {
     const html = `<!doctype html><html><head><style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#000;overflow:hidden;width:100vw;height:100vh}
-#pc{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
+#pc{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;image-rendering:pixelated;background:#000}
 #clips{position:absolute;inset:0;pointer-events:none}
 .clip{position:absolute;pointer-events:all;cursor:move;user-select:none;min-width:40px;min-height:40px}
 .clip img,.clip video{display:block;width:100%;height:100%;object-fit:contain}
@@ -2004,6 +2000,7 @@ window.addEventListener('message',function(e){
   else if(e.data.type==='removeClip'){var el=document.getElementById('clip-'+e.data.id);if(el)el.remove();}
   else if(e.data.type==='updateClip'){var el=document.getElementById('clip-'+e.data.id);if(el){var inn=el.querySelector('img,video');if(inn&&e.data.filter!=null)inn.style.filter=e.data.filter;if(e.data.mix!=null)el.style.mixBlendMode=e.data.mix;}}
   else if(e.data.type==='setBg'){document.body.style.background=e.data.color;}
+  else if(e.data.type==='setInvert'){var c=document.getElementById('pc');if(c)c.style.filter=e.data.invert?'invert(1)':'none';}
 });
 function makeDraggable(div,resize){
   var dragging=false,rx=0,ry=0,rl=0,rt=0;
@@ -2332,7 +2329,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                 onMouseMove={(e) => { if (ovActiveTool === "grid" && mouseDown) paintAtEvent(e); }}
                 onMouseUp={() => setMouseDown(false)}
                 onMouseLeave={() => setMouseDown(false)}
-                style={{ display: "block", position: "relative", cursor: ovActiveTool === "grid" ? "crosshair" : "default" }}
+                style={{ display: "block", position: "relative", cursor: ovActiveTool === "grid" ? "crosshair" : "default", filter: editInvert ? "invert(1)" : "none" }}
               />
               {/* notation overlay */}
               <canvas ref={notationCanvasRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
