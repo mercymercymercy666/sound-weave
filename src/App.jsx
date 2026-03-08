@@ -1070,9 +1070,25 @@ function drawPosterSelectionHighlight(canvas, texts, selectedId, cell) {
   ctx.setLineDash([Math.max(3, cell * 0.4), Math.max(2, cell * 0.3)]);
   ctx.strokeRect(b.x * cell - pad, b.y * cell - pad, b.w * cell + pad * 2, b.h * cell + pad * 2);
   ctx.setLineDash([]);
-  ctx.fillStyle = "rgba(90,150,255,0.7)";
-  ctx.fillRect(b.x * cell - pad, b.y * cell - pad, 7, 7);
+  // Move handle — top-left corner (blue)
+  ctx.fillStyle = "rgba(90,150,255,0.9)";
+  ctx.fillRect(b.x * cell - pad, b.y * cell - pad, 8, 8);
+  // Resize handle — bottom-right corner (orange)
+  ctx.fillStyle = "rgba(255,150,30,0.95)";
+  const rx = (b.x + b.w) * cell + pad - 8, ry = (b.y + b.h) * cell + pad - 8;
+  ctx.fillRect(rx, ry, 8, 8);
+  // Resize arrow indicator inside handle
+  ctx.fillStyle = "#fff"; ctx.font = "7px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("↘", rx + 4, ry + 4);
   ctx.restore();
+}
+
+// Returns true if (gx,gy) in grid units is near the resize handle of text t
+function hitPosterResizeHandle(t, gx, gy, cell) {
+  const b = getPosterTextBounds(t);
+  const hx = b.x + b.w, hy = b.y + b.h; // handle in grid units
+  const hitR = 8 / cell; // 8px hit radius in grid units
+  return Math.abs(gx - hx) < hitR && Math.abs(gy - hy) < hitR;
 }
 
 function drawStaveGroup(ctx, centerRow, gridW, cell, color, seed) {
@@ -1804,6 +1820,7 @@ export default function App() {
   const [posterCell, setPosterCell] = useState(5);
   const [fabricInvert, setFabricInvert] = useState(false);
   const [posterActiveTool, setPosterActiveTool] = useState("select");
+  const [posterCursor, setPosterCursor] = useState("default");
   const [posterBrushSize, setPosterBrushSize] = useState(6);
   const [posterBrushMode, setPosterBrushMode] = useState("reveal");
   const [posterOvType, setPosterOvType] = useState(null);
@@ -1814,6 +1831,7 @@ export default function App() {
   const posterCanvasRef   = useRef(null);
   const posterParamRef    = useRef({});
   const posterDragRef     = useRef(null);
+  const posterResizeRef   = useRef(null); // { id, origFontSize, startGY }
   const posterMaskRef     = useRef(null);
   const posterMediaRef    = useRef(null);
   const posterIsPaintingRef = useRef(false);
@@ -2388,7 +2406,7 @@ export default function App() {
               {/* Poster canvas — drag to move texts, brush to paint overlay */}
               <div style={{ overflow: "auto", borderRadius: 8, lineHeight: 0, border: "1px solid #3a2e20" }}>
                 <canvas ref={posterCanvasRef}
-                  style={{ display: "block", cursor: posterActiveTool === "brush" && posterOvType ? "crosshair" : "default" }}
+                  style={{ display: "block", cursor: posterActiveTool === "brush" && posterOvType ? "crosshair" : posterCursor }}
                   onMouseDown={(e) => {
                     const tool = posterParamRef.current.activeTool;
                     if (tool === "brush" && posterParamRef.current.overlayType) { posterIsPaintingRef.current = true; posterPaintAt(e.clientX, e.clientY); return; }
@@ -2396,6 +2414,16 @@ export default function App() {
                     const rect = c.getBoundingClientRect(); const cs = posterParamRef.current.cell ?? 5;
                     const gx = (e.clientX - rect.left) / cs; const gy = (e.clientY - rect.top) / cs;
                     const ts = posterParamRef.current.texts || [];
+                    // Check resize handle first (only for selected text)
+                    const sid = posterParamRef.current.selectedId;
+                    if (sid != null) {
+                      const sel = ts.find(t => t.id === sid);
+                      if (sel && hitPosterResizeHandle(sel, gx, gy, cs)) {
+                        posterResizeRef.current = { id: sel.id, origFontSize: sel.fontSize, startGY: gy };
+                        e.preventDefault(); return;
+                      }
+                    }
+                    // Then check move
                     for (let i = ts.length - 1; i >= 0; i--) {
                       const t = ts[i]; const b = getPosterTextBounds(t); const hit = 4 / cs;
                       if (gx >= b.x - hit && gx <= b.x + b.w + hit && gy >= b.y - hit && gy <= b.y + b.h + hit) {
@@ -2411,13 +2439,28 @@ export default function App() {
                     const rect = c.getBoundingClientRect(); const cs = posterParamRef.current.cell ?? 5;
                     posterMouseRef.current.x = e.clientX - rect.left; posterMouseRef.current.y = e.clientY - rect.top;
                     if (posterIsPaintingRef.current && posterParamRef.current.activeTool === "brush") { posterPaintAt(e.clientX, e.clientY); return; }
+                    const gx = (e.clientX - rect.left) / cs;
+                    const gy = (e.clientY - rect.top) / cs;
+                    // Resize
+                    if (posterResizeRef.current) {
+                      const { id, origFontSize, startGY } = posterResizeRef.current;
+                      const newSize = Math.max(4, Math.round(origFontSize + (gy - startGY)));
+                      setPosterTexts(prev => prev.map(t => t.id === id ? { ...t, fontSize: newSize } : t));
+                      return;
+                    }
+                    // Update hover cursor
+                    const sid = posterParamRef.current.selectedId;
+                    const ts2 = posterParamRef.current.texts || [];
+                    const sel = sid != null ? ts2.find(t => t.id === sid) : null;
+                    const onHandle = sel ? hitPosterResizeHandle(sel, gx, gy, cs) : false;
+                    setPosterCursor(onHandle ? "se-resize" : posterDragRef.current ? "grabbing" : sel ? "grab" : "default");
+                    // Move
                     if (!posterDragRef.current) return;
-                    const gx = (e.clientX - rect.left) / cs; const gy = (e.clientY - rect.top) / cs;
                     const { id, startGX, startGY, origX, origY } = posterDragRef.current;
                     setPosterTexts(prev => prev.map(t => t.id === id ? { ...t, x: Math.round(origX + gx - startGX), y: Math.round(origY + gy - startGY) } : t));
                   }}
-                  onMouseUp={() => { posterIsPaintingRef.current = false; posterDragRef.current = null; }}
-                  onMouseLeave={() => { posterMouseRef.current.over = false; posterIsPaintingRef.current = false; posterDragRef.current = null; }}
+                  onMouseUp={() => { posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; }}
+                  onMouseLeave={() => { posterMouseRef.current.over = false; posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; }}
                   onMouseEnter={() => { posterMouseRef.current.over = true; }}
                 />
               </div>
