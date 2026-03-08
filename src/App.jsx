@@ -1969,12 +1969,12 @@ body{background:#000;overflow:hidden;width:100vw;height:100vh}
 .clip-btn{background:none;border:none;color:#fff;cursor:pointer;padding:1px 4px;font-size:12px;line-height:1;border-radius:3px}
 .clip-btn:hover{background:rgba(255,255,255,0.2)}
 .clip-resize{position:absolute;bottom:0;right:0;width:14px;height:14px;cursor:se-resize;background:linear-gradient(135deg,transparent 50%,rgba(255,153,51,0.8) 50%)}
-#fs{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.82);color:#fff;font:700 22px/1 monospace;letter-spacing:3px;cursor:pointer;z-index:999;transition:opacity 0.4s}
-#fs:hover{background:rgba(20,0,40,0.92);color:#cc99ff}
+#fs{position:fixed;bottom:8px;right:8px;background:rgba(0,0,0,0.55);color:rgba(255,255,255,0.4);font:10px/1 monospace;letter-spacing:1px;cursor:pointer;z-index:999;padding:4px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);transition:opacity 0.4s}
+#fs:hover{color:#fff;background:rgba(30,0,60,0.8)}
 </style></head><body>
 <canvas id="pc"></canvas>
 <div id="clips"></div>
-<div id="fs" onclick="goFS()">CLICK TO FULLSCREEN</div>
+<div id="fs" onclick="goFS()">⛶ fullscreen</div>
 <script>
 function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();var o=document.getElementById('fs');if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}}
 document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F')goFS();});
@@ -2101,6 +2101,8 @@ function addClip(id,dataUrl,mediaType){
   const [notationSeed, setNotationSeed] = useState(42);
   const [posterCell, setPosterCell] = useState(5);
   const [fabricInvert, setFabricInvert] = useState(false);
+  const [posterInvert, setPosterInvert] = useState(false);
+  const posterInvertRef = useRef(false); posterInvertRef.current = posterInvert;
   const [posterActiveTool, setPosterActiveTool] = useState("select");
   const [posterCursor, setPosterCursor] = useState("default");
   const [posterBrushSize, setPosterBrushSize] = useState(6);
@@ -2129,7 +2131,7 @@ function addClip(id,dataUrl,mediaType){
       overlayType: posterOvType, overlayOpacity: posterOvOpacity, overlayBlend: posterOvBlend,
       dirty: true,
     };
-  }, [posterTexts, posterSelectedId, posterCell, staveCount, notationSeed, fabricInvert,
+  }, [posterTexts, posterSelectedId, posterCell, staveCount, notationSeed, fabricInvert, posterInvert,
       posterActiveTool, posterBrushSize, posterBrushMode, posterOvType, posterOvOpacity, posterOvBlend]);
 
   // Poster RAF loop
@@ -2168,6 +2170,13 @@ function addClip(id,dataUrl,mediaType){
           const fm = document.createElement("canvas"); fm.width = c.width; fm.height = c.height;
           fm.getContext("2d").fillRect(0, 0, fm.width, fm.height);
           drawMediaOverlay(c, overlayMediaRef.current, fm, eo, eb);
+        }
+        if (posterInvertRef.current) {
+          const ctx = c.getContext("2d");
+          ctx.globalCompositeOperation = "difference";
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.globalCompositeOperation = "source-over";
         }
         drawPosterSelectionHighlight(c, ts, sid, cs);
         if (tool === "brush" && posterMouseRef.current.over) {
@@ -2818,6 +2827,10 @@ function addClip(id,dataUrl,mediaType){
                 <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11, color: "#c8a96e", cursor: "pointer", paddingTop: 14 }}>
                   <input type="checkbox" checked={fabricInvert} onChange={(e) => setFabricInvert(e.target.checked)} />
                   dark mode
+                </label>
+                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11, color: "#c8a96e", cursor: "pointer", paddingTop: 14 }}>
+                  <input type="checkbox" checked={posterInvert} onChange={(e) => setPosterInvert(e.target.checked)} />
+                  invert
                 </label>
               </div>
             </div>
