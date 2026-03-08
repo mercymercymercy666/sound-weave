@@ -981,6 +981,186 @@ function combineN(layerGrids, mode = "OR") {
   return out;
 }
 
+// ── POSTER draw functions ─────────────────────────────────────────────────────
+function posterRng(seed) {
+  let s = seed >>> 0;
+  return () => { s = (Math.imul(1664525, s) + 1013904223) >>> 0; return s / 0x100000000; };
+}
+
+function compositeTextsToGrid(texts, gridW, gridH) {
+  const c = document.createElement("canvas");
+  c.width = gridW; c.height = gridH;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, gridW, gridH);
+  ctx.fillStyle = "#000";
+  for (const t of texts) {
+    if (!t.content) continue;
+    ctx.font = `${t.bold ? "bold " : ""}${t.fontSize}px ${t.fontFamily}`;
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    const lines = t.content.split("\n");
+    const lineH = t.fontSize * 1.3;
+    for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], t.x, t.y + i * lineH);
+  }
+  const data = ctx.getImageData(0, 0, gridW, gridH).data;
+  const grid = [];
+  for (let y = 0; y < gridH; y++) {
+    const row = [];
+    for (let x = 0; x < gridW; x++) {
+      const i = (y * gridW + x) * 4;
+      const lum = (data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114) / 255;
+      row.push(lum < 0.5 ? 1 : 0);
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
+function getPosterTextBounds(t) {
+  const c = document.createElement("canvas"); c.width = 4000; c.height = 1;
+  const ctx = c.getContext("2d");
+  ctx.font = `${t.bold ? "bold " : ""}${t.fontSize}px ${t.fontFamily}`;
+  const lines = t.content.split("\n");
+  const w = Math.max(...lines.map(l => ctx.measureText(l || " ").width), t.fontSize * 0.5);
+  const h = lines.length * t.fontSize * 1.3;
+  return { x: t.x, y: t.y, w, h };
+}
+
+function drawPosterSelectionHighlight(canvas, texts, selectedId, cell) {
+  if (selectedId == null || !texts) return;
+  const t = texts.find(x => x.id === selectedId);
+  if (!t) return;
+  const b = getPosterTextBounds(t);
+  const ctx = canvas.getContext("2d");
+  const pad = 2;
+  ctx.save();
+  ctx.strokeStyle = "rgba(90,150,255,0.85)"; ctx.lineWidth = 1.5;
+  ctx.setLineDash([Math.max(3, cell * 0.4), Math.max(2, cell * 0.3)]);
+  ctx.strokeRect(b.x * cell - pad, b.y * cell - pad, b.w * cell + pad * 2, b.h * cell + pad * 2);
+  ctx.setLineDash([]);
+  ctx.fillStyle = "rgba(90,150,255,0.7)";
+  ctx.fillRect(b.x * cell - pad, b.y * cell - pad, 7, 7);
+  ctx.restore();
+}
+
+function drawStaveGroup(ctx, centerRow, gridW, cell, color, seed) {
+  const rand = posterRng(seed);
+  const totalW = gridW * cell; const cy = centerRow * cell;
+  const staveH = cell * 3.2; const gap = staveH / 4;
+  ctx.strokeStyle = color; ctx.lineWidth = Math.max(0.4, cell * 0.05);
+  ctx.lineCap = "butt"; ctx.setLineDash([]);
+  ctx.globalAlpha = 0.20;
+  for (let li = 0; li < 5; li++) {
+    const ly = cy - staveH / 2 + li * gap;
+    ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(totalW, ly); ctx.stroke();
+  }
+  const bars = Math.floor(2 + rand() * 4);
+  ctx.globalAlpha = 0.15; ctx.lineWidth = Math.max(0.6, cell * 0.07);
+  for (let bi = 0; bi < bars; bi++) {
+    const bx = ((bi + 1) / (bars + 1)) * totalW;
+    ctx.beginPath(); ctx.moveTo(bx, cy - staveH/2 - gap*0.15); ctx.lineTo(bx, cy + staveH/2 + gap*0.15); ctx.stroke();
+  }
+  const count = Math.floor(5 + rand() * 12);
+  ctx.globalAlpha = 0.42; ctx.lineCap = "round";
+  for (let i = 0; i < count; i++) {
+    const tPos = (i + 0.25 + rand() * 0.5) / count;
+    const sx = tPos * totalW; const li = Math.floor(rand() * 7) - 1;
+    const sy = cy - staveH / 2 + li * gap;
+    const r = cell * (0.20 + rand() * 0.28);
+    const type = Math.floor(rand() * 6);
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = Math.max(0.8, cell * 0.09);
+    ctx.beginPath();
+    if      (type === 0) { ctx.arc(sx, sy, r, 0, Math.PI*2); ctx.stroke(); }
+    else if (type === 1) { ctx.ellipse(sx, sy, r*0.75, r*0.55, -0.4, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.lineWidth = Math.max(0.6, cell*0.07); ctx.moveTo(sx+r*0.68, sy); ctx.lineTo(sx+r*0.68, sy-cell*1.8); ctx.stroke(); }
+    else if (type === 2) { ctx.moveTo(sx, sy-r); ctx.lineTo(sx+r*0.6, sy); ctx.lineTo(sx, sy+r); ctx.lineTo(sx-r*0.6, sy); ctx.closePath(); ctx.stroke(); }
+    else if (type === 3) { ctx.moveTo(sx-r*0.6, sy-r*0.4); ctx.lineTo(sx, sy+r*0.5); ctx.lineTo(sx+r*0.6, sy-r*0.4); ctx.stroke(); }
+    else if (type === 4) { ctx.arc(sx, sy, r*0.35, 0, Math.PI*2); ctx.fill(); }
+    else { const d = r*0.72; ctx.moveTo(sx-r,sy); ctx.lineTo(sx+r,sy); ctx.moveTo(sx,sy-r); ctx.lineTo(sx,sy+r); ctx.moveTo(sx-d,sy-d); ctx.lineTo(sx+d,sy+d); ctx.moveTo(sx+d,sy-d); ctx.lineTo(sx-d,sy+d); ctx.stroke(); }
+  }
+  ctx.globalAlpha = 1; ctx.setLineDash([]);
+}
+
+function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInvert, staveCount, notationSeed }) {
+  const W = gridW * cell; const H = gridH * cell;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  const BG          = fabricInvert ? "#16121e" : "#fdf3e7";
+  const FABRIC_BASE = fabricInvert ? "rgba(220,185,130,0.18)" : "rgba(140,95,40,0.20)";
+  const NOTATION    = fabricInvert ? "rgba(200,170,110,0.7)" : "#8B6845";
+  const TEXT_INK    = fabricInvert ? "#fdf3e7" : "#3d2b1f";
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+  // Base V-texture
+  ctx.beginPath();
+  for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
+    const cx = x * cell; const cy = y * cell;
+    ctx.moveTo(cx + cell*0.12, cy + cell*0.10);
+    ctx.lineTo(cx + cell*0.50, cy + cell*0.88);
+    ctx.lineTo(cx + cell*0.88, cy + cell*0.10);
+  }
+  ctx.strokeStyle = FABRIC_BASE; ctx.lineWidth = Math.max(0.7, cell*0.09);
+  ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.stroke();
+  // Audio fabric layers
+  if (fabricLayers && fabricLayers.length > 0) {
+    const pad = Math.max(1, cell * 0.10);
+    for (const L of fabricLayers) {
+      const { grid01, color, alpha } = L; if (!grid01) continue;
+      ctx.fillStyle = color; ctx.globalAlpha = alpha * 0.45;
+      for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++)
+        if (grid01[y]?.[x] === 1) ctx.fillRect(x*cell+pad, y*cell+pad, cell-pad*2, cell-pad*2);
+      ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.2, cell*0.14);
+      ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
+        if (grid01[y]?.[x] === 1) {
+          const cx = x*cell; const cy = y*cell;
+          ctx.moveTo(cx+cell*0.12, cy+cell*0.10);
+          ctx.lineTo(cx+cell*0.50, cy+cell*0.88);
+          ctx.lineTo(cx+cell*0.88, cy+cell*0.10);
+        }
+      }
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+  // Musical staves
+  if (staveCount > 0) {
+    const spacing = gridH / (staveCount + 1);
+    for (let si = 1; si <= staveCount; si++)
+      drawStaveGroup(ctx, si * spacing, gridW, cell, NOTATION, notationSeed + si * 17);
+  }
+  // Knit texts (rendered as stitches)
+  const knitTexts    = (texts ?? []).filter(t => t.knit !== false && t.content);
+  const legibleTexts = (texts ?? []).filter(t => t.knit === false  && t.content);
+  if (knitTexts.length > 0) {
+    const textGrid = compositeTextsToGrid(knitTexts, gridW, gridH);
+    ctx.strokeStyle = TEXT_INK; ctx.lineWidth = Math.max(1.2, cell*0.14);
+    ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
+      if (textGrid[y]?.[x] === 1) {
+        const cx = x*cell; const cy = y*cell;
+        ctx.moveTo(cx+cell*0.12, cy+cell*0.10);
+        ctx.lineTo(cx+cell*0.50, cy+cell*0.88);
+        ctx.lineTo(cx+cell*0.88, cy+cell*0.10);
+      }
+    }
+    ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  // Legible texts (direct fillText)
+  if (legibleTexts.length > 0) {
+    ctx.imageSmoothingEnabled = true; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    for (const t of legibleTexts) {
+      const fs = Math.max(8, t.fontSize * cell);
+      ctx.font = `${t.bold ? "bold " : ""}${fs}px ${t.fontFamily}`;
+      const lines = t.content.split("\n"); const lineH = fs * 1.25;
+      ctx.shadowColor = fabricInvert ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.6)";
+      ctx.shadowBlur = Math.max(2, cell * 0.5);
+      ctx.fillStyle = TEXT_INK; ctx.globalAlpha = 0.92;
+      for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], t.x * cell, t.y * cell + i * lineH);
+    }
+    ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false;
+  }
+}
+
 const LAYER_COLORS = { A: "#ff3333", B: "#0088ff", C: "#00c878", D: "#ff8c00", F: "#00d4d4", G: "#ff66cc", H: "#b0e050" };
 const IDS = ["A", "B", "C", "D", "F", "G", "H"];
 
@@ -1088,6 +1268,7 @@ export default function App() {
   const videoRef          = useRef(null);
   const overlayCanvasRef  = useRef(null);
   const overlayMaskRef    = useRef(null);
+  const overlayBgCanvasRef = useRef(null); // sits BEHIND main canvas so stitches show on top
   const overlayMediaRef   = useRef(null);
   const ovIsPaintingRef   = useRef(false);
   const ovMouseRef        = useRef({ x: 0, y: 0, over: false });
@@ -1325,21 +1506,30 @@ export default function App() {
     ovParamRef.current = { ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode };
   }, [ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode]);
 
-  // Overlay RAF loop
+  // Overlay RAF loop — bg canvas sits BEHIND main canvas (stitches on top), fg canvas is for cursor only
   useEffect(() => {
     let raf;
     const step = () => {
-      const oc = overlayCanvasRef.current;
-      const sc = canvasRef.current;
-      const mc = overlayMaskRef.current;
-      const me = overlayMediaRef.current;
+      const bgc = overlayBgCanvasRef.current; // behind stitches
+      const oc  = overlayCanvasRef.current;   // cursor preview (in front)
+      const sc  = canvasRef.current;
+      const mc  = overlayMaskRef.current;
+      const me  = overlayMediaRef.current;
       const { ovType: ot, ovBlend: blend, ovOpacity: opacity, ovActiveTool: tool, ovBrushSize: bs } = ovParamRef.current;
       if (!oc || !sc) { raf = requestAnimationFrame(step); return; }
       const W = sc.width, H = sc.height;
+      // Sync sizes
       if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
+      // Render overlay image/video to bg canvas (stitches will be drawn on top by main canvas)
+      if (bgc) {
+        if (bgc.width !== W || bgc.height !== H) { bgc.width = W; bgc.height = H; }
+        const bgCtx = bgc.getContext("2d");
+        bgCtx.clearRect(0, 0, W, H);
+        if (ot && me && mc) drawMediaOverlay(bgc, me, mc, opacity, blend);
+      }
+      // Render cursor preview to fg canvas
       const ctx = oc.getContext("2d");
       ctx.clearRect(0, 0, W, H);
-      if (ot && me && mc) drawMediaOverlay(oc, me, mc, opacity, blend);
       if (tool === "brush" && ot && ovMouseRef.current.over) {
         const cs = clamp(cell, 4, 30);
         ctx.save();
@@ -1543,6 +1733,168 @@ export default function App() {
 
   const audioRefs = { B: audioRefB, C: audioRefC, D: audioRefD, F: audioRefF, G: audioRefG, H: audioRefH };
 
+  // Live state refs for RAF loops (updated every render, no deps needed)
+  const gridsRef = useRef(grids); gridsRef.current = grids;
+  const alphasRef = useRef(alphas); alphasRef.current = alphas;
+  const colsRef = useRef(cols); colsRef.current = cols;
+  const rowsRef = useRef(rows); rowsRef.current = rows;
+
+  // ── POSTER state ─────────────────────────────────────────────────────────
+  const [posterOpen, setPosterOpen] = useState(false);
+  const [posterTexts, setPosterTexts] = useState([
+    { id: 0, content: "SOUND WEAVE", fontSize: 18, fontFamily: "serif", bold: true, x: 8, y: 68, knit: true },
+  ]);
+  const [posterSelectedId, setPosterSelectedId] = useState(0);
+  const [posterNextId, setPosterNextId] = useState(1);
+  const [staveCount, setStaveCount] = useState(8);
+  const [notationSeed, setNotationSeed] = useState(42);
+  const [posterCell, setPosterCell] = useState(5);
+  const [fabricInvert, setFabricInvert] = useState(false);
+  const [posterActiveTool, setPosterActiveTool] = useState("select");
+  const [posterBrushSize, setPosterBrushSize] = useState(6);
+  const [posterBrushMode, setPosterBrushMode] = useState("reveal");
+  const [posterOvType, setPosterOvType] = useState(null);
+  const [posterOvOpacity, setPosterOvOpacity] = useState(0.85);
+  const [posterOvBlend, setPosterOvBlend] = useState("multiply");
+  const [posterOvVideoPlaying, setPosterOvVideoPlaying] = useState(false);
+
+  const posterCanvasRef   = useRef(null);
+  const posterParamRef    = useRef({});
+  const posterDragRef     = useRef(null);
+  const posterMaskRef     = useRef(null);
+  const posterMediaRef    = useRef(null);
+  const posterIsPaintingRef = useRef(false);
+  const posterMouseRef    = useRef({ x: 0, y: 0, over: false });
+
+  // Sync poster params to ref
+  useEffect(() => {
+    posterParamRef.current = {
+      ...posterParamRef.current,
+      texts: posterTexts, selectedId: posterSelectedId,
+      cell: posterCell, staveCount, notationSeed, fabricInvert,
+      activeTool: posterActiveTool, brushSize: posterBrushSize, brushMode: posterBrushMode,
+      overlayType: posterOvType, overlayOpacity: posterOvOpacity, overlayBlend: posterOvBlend,
+      dirty: true,
+    };
+  }, [posterTexts, posterSelectedId, posterCell, staveCount, notationSeed, fabricInvert,
+      posterActiveTool, posterBrushSize, posterBrushMode, posterOvType, posterOvOpacity, posterOvBlend]);
+
+  // Poster RAF loop
+  useEffect(() => {
+    if (!posterOpen) return;
+    let raf;
+    let lastSyncMs = 0;
+    const step = (now) => {
+      const c = posterCanvasRef.current;
+      if (!c) { raf = requestAnimationFrame(step); return; }
+      let needsDraw = posterParamRef.current.dirty;
+      if (now - lastSyncMs >= 100) {
+        lastSyncMs = now;
+        const gw = colsRef.current; const gh = rowsRef.current;
+        if (gw !== posterParamRef.current.gridW || gh !== posterParamRef.current.gridH) {
+          posterParamRef.current.gridW = gw; posterParamRef.current.gridH = gh;
+        }
+        posterParamRef.current.fabricLayers = LAYERS.map(L => ({
+          color: L.color, alpha: alphasRef.current[L.id] ?? 0.55, grid01: gridsRef.current[L.id],
+        }));
+        needsDraw = true;
+      }
+      const ot = posterParamRef.current.overlayType;
+      const tool = posterParamRef.current.activeTool;
+      if (ot === "video" || (tool === "brush" && posterMouseRef.current.over)) needsDraw = true;
+      if (needsDraw) {
+        posterParamRef.current.dirty = false;
+        const { cell: cs = 5, staveCount: sc = 8, notationSeed: ns = 42,
+          fabricLayers, fabricInvert: fi = false, texts: ts = [], selectedId: sid,
+          gridW: gw = colsRef.current, gridH: gh = rowsRef.current,
+          overlayBlend: blend, overlayOpacity: opacity } = posterParamRef.current;
+        drawPoster(c, { gridW: gw, gridH: gh, cell: cs, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns });
+        if (ot && posterMediaRef.current && posterMaskRef.current)
+          drawMediaOverlay(c, posterMediaRef.current, posterMaskRef.current, opacity, blend);
+        drawPosterSelectionHighlight(c, ts, sid, cs);
+        if (tool === "brush" && posterMouseRef.current.over) {
+          const ctx = c.getContext("2d");
+          ctx.save();
+          ctx.strokeStyle = posterParamRef.current.brushMode === "erase" ? "rgba(255,80,80,0.8)" : "rgba(255,255,255,0.8)";
+          ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.arc(posterMouseRef.current.x, posterMouseRef.current.y, posterParamRef.current.brushSize * cs, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]); ctx.restore();
+        }
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posterOpen, LAYERS]);
+
+  function posterInitMask() {
+    const mc = document.createElement("canvas");
+    mc.width = posterParamRef.current.gridW ?? cols;
+    mc.height = posterParamRef.current.gridH ?? rows;
+    posterMaskRef.current = mc;
+  }
+  function handlePosterFile(file) {
+    if (!file) return;
+    if (posterMediaRef.current?._objUrl) URL.revokeObjectURL(posterMediaRef.current._objUrl);
+    const url = URL.createObjectURL(file);
+    posterInitMask();
+    if (file.type.startsWith("video/")) {
+      const vid = document.createElement("video");
+      vid._objUrl = url; vid.src = url; vid.loop = true; vid.muted = true; vid.playsInline = true;
+      vid.addEventListener("canplay", () => { posterMediaRef.current = vid; setPosterOvType("video"); setPosterOvVideoPlaying(false); }, { once: true });
+      vid.addEventListener("play", () => setPosterOvVideoPlaying(true));
+      vid.addEventListener("pause", () => setPosterOvVideoPlaying(false));
+    } else {
+      const img = new Image(); img._objUrl = url; img.src = url;
+      img.onload = () => { posterMediaRef.current = img; setPosterOvType("image"); };
+    }
+  }
+  function removePosterOverlay() {
+    if (posterMediaRef.current?.pause) posterMediaRef.current.pause();
+    if (posterMediaRef.current?._objUrl) URL.revokeObjectURL(posterMediaRef.current._objUrl);
+    posterMediaRef.current = null; posterMaskRef.current = null; setPosterOvType(null);
+  }
+  function posterPaintAt(clientX, clientY) {
+    const mc = posterMaskRef.current; const canvas = posterCanvasRef.current;
+    if (!mc || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const cs = posterParamRef.current.cell ?? 5;
+    const ctx = mc.getContext("2d");
+    if (posterParamRef.current.brushMode === "erase") { ctx.globalCompositeOperation = "destination-out"; ctx.fillStyle = "rgba(0,0,0,1)"; }
+    else { ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "rgba(255,255,255,1)"; }
+    ctx.beginPath(); ctx.arc((clientX - rect.left) / cs, (clientY - rect.top) / cs, posterParamRef.current.brushSize ?? 6, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+    posterParamRef.current.dirty = true;
+  }
+  function addPosterText() {
+    const id = posterNextId; setPosterNextId(id + 1);
+    setPosterTexts(prev => [...prev, { id, content: "New text", fontSize: 18, fontFamily: "serif", bold: false, x: 8, y: 8, knit: true }]);
+    setPosterSelectedId(id);
+  }
+  function removePosterText(id) {
+    setPosterTexts(prev => prev.filter(t => t.id !== id));
+    setPosterSelectedId(prev => prev === id ? null : prev);
+  }
+  function updatePosterSelected(patch) {
+    if (posterSelectedId === null) return;
+    setPosterTexts(prev => prev.map(t => t.id === posterSelectedId ? { ...t, ...patch } : t));
+  }
+  function exportPosterPNG() {
+    const { cell: cs = 5, staveCount: sc = 8, notationSeed: ns = 42, fabricLayers, fabricInvert: fi = false,
+      texts: ts = [], gridW: gw = cols, gridH: gh = rows,
+      overlayType: ot, overlayOpacity: opacity, overlayBlend: blend } = posterParamRef.current;
+    const print = document.createElement("canvas");
+    drawPoster(print, { gridW: gw, gridH: gh, cell: cs * 3, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns });
+    if (ot && posterMediaRef.current && posterMaskRef.current) {
+      const scaledMask = document.createElement("canvas");
+      scaledMask.width = print.width; scaledMask.height = print.height;
+      scaledMask.getContext("2d").drawImage(posterMaskRef.current, 0, 0, print.width, print.height);
+      drawMediaOverlay(print, posterMediaRef.current, scaledMask, opacity, blend);
+    }
+    const a = document.createElement("a"); a.download = "knit-poster.png"; a.href = print.toDataURL("image/png"); a.click();
+  }
+
   // shared style tokens
   const NG = "#39ff14";
   const ng20 = "rgba(57,255,20,0.20)";
@@ -1557,190 +1909,130 @@ export default function App() {
   });
   const colorPick = { width: 36, height: 28, borderRadius: 6, cursor: "pointer", padding: 2 };
 
+  const posterSelected = posterTexts.find(t => t.id === posterSelectedId) ?? null;
+
   return (
     <div style={{ minHeight: "100vh", background: "#080808", padding: 16, fontFamily: "ui-monospace, 'Courier New', monospace", color: NG }}>
       {/* hidden video element for video guide */}
       <video ref={videoRef} style={{ display: "none" }} />
 
-      <div style={{ maxWidth: 1400, margin: "0 auto", display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 12 }}>
+      <div style={{ maxWidth: posterOpen ? 1900 : 1400, margin: "0 auto", display: "grid", gridTemplateColumns: posterOpen ? "1.2fr 0.65fr 420px" : "1.2fr 0.65fr", gap: 12 }}>
 
-        {/* ── LEFT: Canvas ── */}
-        <div style={{ ...panel, display: "flex", flexDirection: "column", gap: 10 }}>
-
-          {/* Header */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
-            <div>
-              <div style={{ fontWeight: 900, fontSize: 20, letterSpacing: 2, textShadow: `0 0 12px ${NG}` }}>SOUND WEAVE</div>
-              <div style={{ ...muted, marginTop: 3 }}>upload an image, add sound — the weave draws itself</div>
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              {/* Pattern mode toggle — 4 modes */}
-              <div style={{ display: "flex", background: "#0a0a0a", border: `1px solid ${ng20}`, borderRadius: 10, padding: 3, gap: 3 }}>
-                {["weave", "lace", "chart", "stitch"].map((m) => (
-                  <button key={m} onClick={() => setPatternMode(m)}
-                    style={{ padding: "5px 13px", borderRadius: 7, fontSize: 12, cursor: "pointer", fontWeight: 700, border: "none",
-                      background: patternMode === m ? NG : "transparent",
-                      color: patternMode === m ? "#000" : "rgba(57,255,20,0.5)",
-                      boxShadow: patternMode === m ? `0 0 8px ${NG}` : "none",
-                      letterSpacing: 1, transition: "all 0.15s" }}>
-                    {m}
-                  </button>
-                ))}
-              </div>
-              <div style={{ width: 1, height: 20, background: ng20 }} />
-              <button onClick={() => setGrids(() => { const o = {}; for (const id of IDS) o[id] = makeGrid(rows, cols, 0); return o; })}
-                style={btn(false)}>clear</button>
-              <button onClick={() => { const c = canvasRef.current; if (c) downloadPNG(c, `weave_${cols}x${rows}.png`); }}
-                style={btn(false)}>export png</button>
-              {isRecording
-                ? <button onClick={stopRecording}
-                    style={{ ...btn(true), background: "#ff2222", borderColor: "#ff2222", color: "#fff", boxShadow: "0 0 10px #ff2222" }}>stop rec</button>
-                : <button onClick={startRecording}
-                    style={{ ...btn(false), boxShadow: `0 0 6px ${NG}` }}>record</button>
-              }
-            </div>
-          </div>
-
-          {/* Canvas stack — main + overlay canvases */}
-          <div style={{ position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)` }}>
-            <canvas
-              ref={canvasRef}
-              onMouseDown={(e) => { if (ovActiveTool === "grid") { setMouseDown(true); paintAtEvent(e); } }}
-              onMouseMove={(e) => { if (ovActiveTool === "grid" && mouseDown) paintAtEvent(e); }}
-              onMouseUp={() => setMouseDown(false)}
-              onMouseLeave={() => setMouseDown(false)}
-              style={{ display: "block", cursor: ovActiveTool === "grid" ? "crosshair" : "default" }}
-            />
-            {/* notation overlay — pointer-events none, always present */}
-            <canvas ref={notationCanvasRef}
-              style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
-            {/* brush/image overlay — receives mouse events only in brush mode */}
-            <canvas ref={overlayCanvasRef}
-              style={{ position: "absolute", top: 0, left: 0,
-                pointerEvents: ovActiveTool === "brush" && ovType ? "auto" : "none",
-                cursor: "crosshair" }}
-              onMouseDown={(e) => { ovIsPaintingRef.current = true; ovPaintAt(e.clientX, e.clientY); }}
-              onMouseMove={(e) => {
-                const rect = overlayCanvasRef.current?.getBoundingClientRect();
-                if (rect) ovMouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top, over: true };
-                if (ovIsPaintingRef.current) ovPaintAt(e.clientX, e.clientY);
-              }}
-              onMouseUp={() => { ovIsPaintingRef.current = false; }}
-              onMouseLeave={() => { ovIsPaintingRef.current = false; ovMouseRef.current = { ...ovMouseRef.current, over: false }; }}
-              onMouseEnter={() => { ovMouseRef.current = { ...ovMouseRef.current, over: true }; }}
-            />
-          </div>
-
-          {/* Score view — separate canvas below main canvas */}
-          {showScore && (
-            <div style={{ border: `1px solid ${ng20}`, borderRadius: 8, overflow: "hidden", lineHeight: 0 }}>
-              <canvas ref={scoreCanvasRef} style={{ display: "block" }} />
-            </div>
-          )}
-
-          {/* Below-canvas controls */}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={muted}>draw:</span>
-            <button onClick={() => { setOvActiveTool("grid"); setDrawValue(1); }}
-              style={btn(ovActiveTool === "grid" && drawValue === 1)}>mc</button>
-            <button onClick={() => { setOvActiveTool("grid"); setDrawValue(0); }}
-              style={btn(ovActiveTool === "grid" && drawValue === 0)}>cc</button>
-            {ovType && (
-              <button onClick={() => setOvActiveTool(ovActiveTool === "brush" ? "grid" : "brush")}
-                style={{ ...btn(ovActiveTool === "brush"), borderColor: ovActiveTool === "brush" ? NG : "#ff66cc", color: ovActiveTool === "brush" ? "#000" : "#ff66cc" }}>
-                brush {ovActiveTool === "brush" ? "on" : "off"}
-              </button>
-            )}
-            <div style={{ width: 1, height: 20, background: ng20 }} />
-            <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, cursor: "pointer" }}>
-              <input type="checkbox" checked={symmetry} onChange={(e) => setSymmetry(e.target.checked)} />
-              symmetry
-            </label>
-            <div style={{ width: 1, height: 20, background: ng20 }} />
-            <span style={muted}>layers:</span>
-            {["OR", "XOR", "AND"].map((m) => (
-              <button key={m} onClick={() => setCombineMode(m)} style={btn(combineMode === m)}>{m}</button>
-            ))}
-          </div>
-
-          {/* Energy meters */}
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={muted}>energy</span>
-            {LAYERS.map((L) => (
-              <span key={L.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
-                <span style={{ color: LAYER_COLORS[L.id], fontWeight: 700 }}>{L.id}</span>
-                <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: LAYER_COLORS[L.id], borderRadius: 3, boxShadow: `0 0 4px ${LAYER_COLORS[L.id]}`, transition: "width 0.1s" }} />
-                <span style={muted}>{energyAll[L.id]}%</span>
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* ── RIGHT: Controls ── */}
+        {/* ── LEFT: Canvas + image controls ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ ...panel, display: "flex", flexDirection: "column", gap: 10 }}>
 
-          {/* ▶ Sound layers */}
-          <div style={panel}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: 1 }}>sound layers</div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={syncPlayAll}
-                  style={{ ...btn(false), fontSize: 11, borderColor: "#00c878", color: "#00c878" }}>sync play all</button>
-                <button onClick={pauseAll}
-                  style={{ ...btn(false), fontSize: 11 }}>pause all</button>
+            {/* Header row */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: 20, letterSpacing: 2, textShadow: `0 0 12px ${NG}` }}>SOUND WEAVE</div>
+                <div style={{ ...muted, marginTop: 3 }}>upload an image, add sound — the weave draws itself</div>
               </div>
-            </div>
-            {LAYERS.map((L) => (
-              <div key={L.id} style={{ border: `1px solid ${ng20}`, borderRadius: 9, padding: 9, marginBottom: 8 }}>
-                {/* Layer header */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <b style={{ color: LAYER_COLORS[L.id], fontSize: 14, letterSpacing: 1 }}>{L.id}</b>
-                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{L.name}</span>
-                  </span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: LAYER_COLORS[L.id], borderRadius: 3, transition: "width 0.1s" }} />
-                    <span style={muted}>{energyAll[L.id]}%</span>
-                  </span>
-                </div>
-                {/* on/off toggle */}
-                <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
-                  {(L.type === "mic" ? ["off", "mic"] : ["off", "file"]).map((m) => (
-                    <button key={m} onClick={() => setModes((s) => ({ ...s, [L.id]: m }))} style={btn(modes[L.id] === m)}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                {/* Pattern mode toggle */}
+                <div style={{ display: "flex", background: "#0a0a0a", border: `1px solid ${ng20}`, borderRadius: 10, padding: 3, gap: 3 }}>
+                  {["weave", "lace", "chart", "stitch"].map((m) => (
+                    <button key={m} onClick={() => setPatternMode(m)}
+                      style={{ padding: "5px 13px", borderRadius: 7, fontSize: 12, cursor: "pointer", fontWeight: 700, border: "none",
+                        background: patternMode === m ? NG : "transparent",
+                        color: patternMode === m ? "#000" : "rgba(57,255,20,0.5)",
+                        boxShadow: patternMode === m ? `0 0 8px ${NG}` : "none",
+                        letterSpacing: 1, transition: "all 0.15s" }}>
                       {m}
                     </button>
                   ))}
                 </div>
-                {/* file input + audio player */}
-                {L.type === "file" && (
-                  <div style={{ marginBottom: 6 }}>
-                    <input type="file" accept="audio/*"
-                      onChange={(e) => filePickerToAudio(audioRefs[L.id], e.target.files?.[0], L.id)}
-                      style={{ fontSize: 11 }} />
-                    <audio ref={audioRefs[L.id]} controls style={{ width: "100%", marginTop: 4, height: 28 }} />
-                  </div>
-                )}
-                {/* speed / threshold / mix alpha */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                  <label style={label12}>speed
-                    <input type="range" min={1} max={30} value={speeds[L.id]}
-                      onChange={(e) => setSpeeds((s) => ({ ...s, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
-                    <span style={muted}>{speeds[L.id]}r/s</span>
-                  </label>
-                  <label style={label12}>threshold
-                    <input type="range" min={0} max={1} step={0.01} value={thresholds[L.id]}
-                      onChange={(e) => setThresholds((t) => ({ ...t, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
-                    <span style={muted}>{Math.round(thresholds[L.id] * 100)}%</span>
-                  </label>
-                  <label style={label12}>mix
-                    <input type="range" min={0} max={1} step={0.01} value={alphas[L.id]}
-                      onChange={(e) => setAlphas((a) => ({ ...a, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
-                    <span style={muted}>{Math.round(alphas[L.id] * 100)}%</span>
-                  </label>
-                </div>
+                <div style={{ width: 1, height: 20, background: ng20 }} />
+                <button onClick={() => setGrids(() => { const o = {}; for (const id of IDS) o[id] = makeGrid(rows, cols, 0); return o; })}
+                  style={btn(false)}>clear</button>
+                <button onClick={() => { const c = canvasRef.current; if (c) downloadPNG(c, `weave_${cols}x${rows}.png`); }}
+                  style={btn(false)}>export png</button>
+                {isRecording
+                  ? <button onClick={stopRecording} style={{ ...btn(true), background: "#ff2222", borderColor: "#ff2222", color: "#fff", boxShadow: "0 0 10px #ff2222" }}>stop rec</button>
+                  : <button onClick={startRecording} style={{ ...btn(false), boxShadow: `0 0 6px ${NG}` }}>record</button>
+                }
+                <button onClick={() => setPosterOpen(o => !o)}
+                  style={{ ...btn(posterOpen), borderColor: posterOpen ? NG : "#c8a96e", color: posterOpen ? "#000" : "#c8a96e" }}>
+                  poster {posterOpen ? "▶" : "◀"}
+                </button>
               </div>
-            ))}
+            </div>
+
+            {/* Canvas stack: overlayBg (behind) → canvas → notation → cursor */}
+            <div style={{ position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)` }}>
+              {/* overlay image/video — BEHIND stitches */}
+              <canvas ref={overlayBgCanvasRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
+              {/* main stitch canvas */}
+              <canvas ref={canvasRef}
+                onMouseDown={(e) => { if (ovActiveTool === "grid") { setMouseDown(true); paintAtEvent(e); } }}
+                onMouseMove={(e) => { if (ovActiveTool === "grid" && mouseDown) paintAtEvent(e); }}
+                onMouseUp={() => setMouseDown(false)}
+                onMouseLeave={() => setMouseDown(false)}
+                style={{ display: "block", position: "relative", cursor: ovActiveTool === "grid" ? "crosshair" : "default" }}
+              />
+              {/* notation overlay */}
+              <canvas ref={notationCanvasRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
+              {/* brush cursor — on top, captures mouse in brush mode */}
+              <canvas ref={overlayCanvasRef}
+                style={{ position: "absolute", top: 0, left: 0,
+                  pointerEvents: ovActiveTool === "brush" && ovType ? "auto" : "none",
+                  cursor: "crosshair" }}
+                onMouseDown={(e) => { ovIsPaintingRef.current = true; ovPaintAt(e.clientX, e.clientY); }}
+                onMouseMove={(e) => {
+                  const rect = overlayCanvasRef.current?.getBoundingClientRect();
+                  if (rect) ovMouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top, over: true };
+                  if (ovIsPaintingRef.current) ovPaintAt(e.clientX, e.clientY);
+                }}
+                onMouseUp={() => { ovIsPaintingRef.current = false; }}
+                onMouseLeave={() => { ovIsPaintingRef.current = false; ovMouseRef.current = { ...ovMouseRef.current, over: false }; }}
+                onMouseEnter={() => { ovMouseRef.current = { ...ovMouseRef.current, over: true }; }}
+              />
+            </div>
+
+            {/* Score view */}
+            {showScore && (
+              <div style={{ border: `1px solid ${ng20}`, borderRadius: 8, overflow: "hidden", lineHeight: 0 }}>
+                <canvas ref={scoreCanvasRef} style={{ display: "block" }} />
+              </div>
+            )}
+
+            {/* Below-canvas toolbar */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={muted}>draw:</span>
+              <button onClick={() => { setOvActiveTool("grid"); setDrawValue(1); }} style={btn(ovActiveTool === "grid" && drawValue === 1)}>mc</button>
+              <button onClick={() => { setOvActiveTool("grid"); setDrawValue(0); }} style={btn(ovActiveTool === "grid" && drawValue === 0)}>cc</button>
+              {ovType && (
+                <button onClick={() => setOvActiveTool(ovActiveTool === "brush" ? "grid" : "brush")}
+                  style={{ ...btn(ovActiveTool === "brush"), borderColor: ovActiveTool === "brush" ? NG : "#ff66cc", color: ovActiveTool === "brush" ? "#000" : "#ff66cc" }}>
+                  brush {ovActiveTool === "brush" ? "on" : "off"}
+                </button>
+              )}
+              <div style={{ width: 1, height: 20, background: ng20 }} />
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, cursor: "pointer" }}>
+                <input type="checkbox" checked={symmetry} onChange={(e) => setSymmetry(e.target.checked)} />
+                symmetry
+              </label>
+              <div style={{ width: 1, height: 20, background: ng20 }} />
+              <span style={muted}>layers:</span>
+              {["OR", "XOR", "AND"].map((m) => (
+                <button key={m} onClick={() => setCombineMode(m)} style={btn(combineMode === m)}>{m}</button>
+              ))}
+            </div>
+
+            {/* Energy meters */}
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={muted}>energy</span>
+              {LAYERS.map((L) => (
+                <span key={L.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+                  <span style={{ color: LAYER_COLORS[L.id], fontWeight: 700 }}>{L.id}</span>
+                  <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: LAYER_COLORS[L.id], borderRadius: 3, boxShadow: `0 0 4px ${LAYER_COLORS[L.id]}`, transition: "width 0.1s" }} />
+                  <span style={muted}>{energyAll[L.id]}%</span>
+                </span>
+              ))}
+            </div>
           </div>
+
+          {/* ── IMAGE CONTROLS (below canvas) ── */}
 
           {/* Background image */}
           <div style={panel}>
@@ -1760,11 +2052,10 @@ export default function App() {
             </div>
           </div>
 
-          {/* Image guide — gates stitches by image/video */}
+          {/* Image guide */}
           <div style={panel}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, letterSpacing: 1 }}>image guide</div>
             <div style={{ ...muted, fontSize: 11, marginBottom: 8 }}>gates which stitches the audio can fill</div>
-            {/* Mode selector */}
             <div style={{ display: "flex", gap: 5, marginBottom: 6, flexWrap: "wrap" }}>
               {["OFF", "MASK", "CARVE", "BIAS"].map((m) => (
                 <button key={m} onClick={() => setImageMode(m)} style={btn(imageMode === m)}>{m}</button>
@@ -1772,20 +2063,16 @@ export default function App() {
             </div>
             <div style={{ ...muted, fontSize: 11, marginBottom: 8 }}>
               {imageMode === "OFF"   && "no gating — all stitches free"}
-              {imageMode === "MASK"  && "MASK — audio fills only where guide = 1"}
-              {imageMode === "CARVE" && "CARVE — audio fills only where guide = 0"}
-              {imageMode === "BIAS"  && "BIAS — guide lowers threshold, more fill where bright"}
+              {imageMode === "MASK"  && "fills only where guide = 1"}
+              {imageMode === "CARVE" && "fills only where guide = 0"}
+              {imageMode === "BIAS"  && "guide lowers threshold — more fill where bright"}
             </div>
             <input type="file" accept="image/*,video/*" onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (!f) return;
+              const f = e.target.files?.[0]; if (!f) return;
               if (f.type.startsWith("video/")) {
                 const vid = videoRef.current;
                 if (vid) { vid.src = URL.createObjectURL(f); vid.loop = true; vid.muted = true; vid.play().catch(() => {}); setVideoGuideActive(true); }
-              } else {
-                setVideoGuideActive(false);
-                handleImageGuide(f);
-              }
+              } else { setVideoGuideActive(false); handleImageGuide(f); }
             }} />
             {videoGuideActive && <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>video guide active — sampling frames</div>}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
@@ -1803,10 +2090,10 @@ export default function App() {
               style={{ ...btn(false), marginTop: 8, fontSize: 11 }}>clear guide</button>
           </div>
 
-          {/* Overlay brush — paint image/video through brush mask */}
+          {/* Overlay brush — image/video behind stitches, painted with brush */}
           <div style={panel}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, letterSpacing: 1 }}>overlay brush</div>
-            <div style={{ ...muted, fontSize: 11, marginBottom: 8 }}>paint an image or video to reveal through a drawn mask</div>
+            <div style={{ ...muted, fontSize: 11, marginBottom: 8 }}>image/video sits behind stitches — paint to reveal, stitches always on top</div>
             <input type="file" accept="image/*,video/*" onChange={(e) => handleOverlayFile(e.target.files?.[0])} />
             {ovType && (
               <>
@@ -1842,16 +2129,14 @@ export default function App() {
                 <label style={{ ...label12, marginTop: 6 }}>blend mode
                   <select value={ovBlend} onChange={(e) => setOvBlend(e.target.value)}
                     style={{ marginTop: 4, background: "#1a1a1a", color: NG, border: `1px solid ${ng20}`, borderRadius: 6, padding: "3px 8px", fontSize: 12, display: "block" }}>
-                    {["multiply", "screen", "overlay", "soft-light", "hard-light", "difference", "exclusion", "normal"].map((b) => (
+                    {["multiply", "screen", "overlay", "soft-light", "hard-light", "color-burn", "difference", "exclusion", "normal"].map((b) => (
                       <option key={b} value={b}>{b}</option>
                     ))}
                   </select>
                 </label>
                 <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => { const mc = overlayMaskRef.current; if (mc) { const ctx = mc.getContext("2d"); ctx.clearRect(0, 0, mc.width, mc.height); } }}
-                    style={btn(false)}>clear mask</button>
-                  <button onClick={() => { const mc = overlayMaskRef.current; if (mc) { const ctx = mc.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, mc.width, mc.height); } }}
-                    style={btn(false)}>fill mask</button>
+                  <button onClick={() => { const mc = overlayMaskRef.current; if (mc) { const ctx = mc.getContext("2d"); ctx.clearRect(0, 0, mc.width, mc.height); } }} style={btn(false)}>clear mask</button>
+                  <button onClick={() => { const mc = overlayMaskRef.current; if (mc) { const ctx = mc.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, mc.width, mc.height); } }} style={btn(false)}>fill mask</button>
                   {ovType === "video" && (
                     <button onClick={() => { const me = overlayMediaRef.current; if (!me) return; ovVideoPlaying ? me.pause() : me.play().catch(() => {}); }}
                       style={btn(false)}>{ovVideoPlaying ? "pause video" : "play video"}</button>
@@ -1931,6 +2216,63 @@ export default function App() {
               <span style={muted}>{cell}px</span>
             </label>
           </div>
+        </div>
+
+        {/* ── RIGHT: Sound + knitting ── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+
+          {/* Sound layers */}
+          <div style={panel}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: 1 }}>sound layers</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={syncPlayAll} style={{ ...btn(false), fontSize: 11, borderColor: "#00c878", color: "#00c878" }}>sync play</button>
+                <button onClick={pauseAll} style={{ ...btn(false), fontSize: 11 }}>pause all</button>
+              </div>
+            </div>
+            {LAYERS.map((L) => (
+              <div key={L.id} style={{ border: `1px solid ${ng20}`, borderRadius: 9, padding: 9, marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <b style={{ color: LAYER_COLORS[L.id], fontSize: 14, letterSpacing: 1 }}>{L.id}</b>
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{L.name}</span>
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: LAYER_COLORS[L.id], borderRadius: 3, transition: "width 0.1s" }} />
+                    <span style={muted}>{energyAll[L.id]}%</span>
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
+                  {(L.type === "mic" ? ["off", "mic"] : ["off", "file"]).map((m) => (
+                    <button key={m} onClick={() => setModes((s) => ({ ...s, [L.id]: m }))} style={btn(modes[L.id] === m)}>{m}</button>
+                  ))}
+                </div>
+                {L.type === "file" && (
+                  <div style={{ marginBottom: 6 }}>
+                    <input type="file" accept="audio/*" onChange={(e) => filePickerToAudio(audioRefs[L.id], e.target.files?.[0], L.id)} style={{ fontSize: 11 }} />
+                    <audio ref={audioRefs[L.id]} controls style={{ width: "100%", marginTop: 4, height: 28 }} />
+                  </div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                  <label style={label12}>speed
+                    <input type="range" min={1} max={30} value={speeds[L.id]}
+                      onChange={(e) => setSpeeds((s) => ({ ...s, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
+                    <span style={muted}>{speeds[L.id]}r/s</span>
+                  </label>
+                  <label style={label12}>threshold
+                    <input type="range" min={0} max={1} step={0.01} value={thresholds[L.id]}
+                      onChange={(e) => setThresholds((t) => ({ ...t, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
+                    <span style={muted}>{Math.round(thresholds[L.id] * 100)}%</span>
+                  </label>
+                  <label style={label12}>mix
+                    <input type="range" min={0} max={1} step={0.01} value={alphas[L.id]}
+                      onChange={(e) => setAlphas((a) => ({ ...a, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
+                    <span style={muted}>{Math.round(alphas[L.id] * 100)}%</span>
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
 
           {/* Knitting instructions */}
           <div style={panel}>
@@ -1951,13 +2293,223 @@ export default function App() {
             <textarea readOnly value={knit.rowsText.slice(0, 40).join("\n")}
               style={{ width: "100%", height: 180, marginTop: 8, padding: 8, borderRadius: 8, fontSize: 11, boxSizing: "border-box" }} />
             <div style={{ ...muted, marginTop: 6, fontSize: 11 }}>showing 40 of {knit.rowsText.length} rows</div>
-            <button onClick={downloadPattern}
-              style={{ ...btn(true), marginTop: 8, width: "100%", boxShadow: `0 0 8px ${NG}` }}>
+            <button onClick={downloadPattern} style={{ ...btn(true), marginTop: 8, width: "100%", boxShadow: `0 0 8px ${NG}` }}>
               download pattern ({knit.rowsText.length} rows)
             </button>
           </div>
-
         </div>
+
+        {/* ── POSTER: collapsible 3rd column ── */}
+        {posterOpen && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+
+            {/* Poster canvas */}
+            <div style={{ background: "#1a1610", border: "1px solid #3a2e20", borderRadius: 14, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#c8a96e", letterSpacing: 1 }}>KNIT POSTER</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={exportPosterPNG}
+                    style={{ padding: "5px 12px", borderRadius: 8, fontSize: 11, cursor: "pointer", fontWeight: 600, border: "1px solid #c8a96e", background: "transparent", color: "#c8a96e" }}>
+                    export png
+                  </button>
+                  <button onClick={() => setPosterOpen(false)}
+                    style={{ padding: "5px 10px", borderRadius: 8, fontSize: 11, cursor: "pointer", border: "1px solid #3a2e20", background: "transparent", color: "#a07040" }}>
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div style={{ ...muted, fontSize: 11, marginBottom: 8, color: "rgba(200,169,110,0.5)" }}>
+                mirrors the live audio pattern as V-stitch fabric
+              </div>
+              {/* Poster canvas — drag to move texts, brush to paint overlay */}
+              <div style={{ overflow: "auto", borderRadius: 8, lineHeight: 0, border: "1px solid #3a2e20" }}>
+                <canvas ref={posterCanvasRef}
+                  style={{ display: "block", cursor: posterActiveTool === "brush" && posterOvType ? "crosshair" : "default" }}
+                  onMouseDown={(e) => {
+                    const tool = posterParamRef.current.activeTool;
+                    if (tool === "brush" && posterParamRef.current.overlayType) { posterIsPaintingRef.current = true; posterPaintAt(e.clientX, e.clientY); return; }
+                    const c = posterCanvasRef.current; if (!c) return;
+                    const rect = c.getBoundingClientRect(); const cs = posterParamRef.current.cell ?? 5;
+                    const gx = (e.clientX - rect.left) / cs; const gy = (e.clientY - rect.top) / cs;
+                    const ts = posterParamRef.current.texts || [];
+                    for (let i = ts.length - 1; i >= 0; i--) {
+                      const t = ts[i]; const b = getPosterTextBounds(t); const hit = 4 / cs;
+                      if (gx >= b.x - hit && gx <= b.x + b.w + hit && gy >= b.y - hit && gy <= b.y + b.h + hit) {
+                        setPosterSelectedId(t.id);
+                        posterDragRef.current = { id: t.id, startGX: gx, startGY: gy, origX: t.x, origY: t.y };
+                        return;
+                      }
+                    }
+                    setPosterSelectedId(null);
+                  }}
+                  onMouseMove={(e) => {
+                    const c = posterCanvasRef.current; if (!c) return;
+                    const rect = c.getBoundingClientRect(); const cs = posterParamRef.current.cell ?? 5;
+                    posterMouseRef.current.x = e.clientX - rect.left; posterMouseRef.current.y = e.clientY - rect.top;
+                    if (posterIsPaintingRef.current && posterParamRef.current.activeTool === "brush") { posterPaintAt(e.clientX, e.clientY); return; }
+                    if (!posterDragRef.current) return;
+                    const gx = (e.clientX - rect.left) / cs; const gy = (e.clientY - rect.top) / cs;
+                    const { id, startGX, startGY, origX, origY } = posterDragRef.current;
+                    setPosterTexts(prev => prev.map(t => t.id === id ? { ...t, x: Math.round(origX + gx - startGX), y: Math.round(origY + gy - startGY) } : t));
+                  }}
+                  onMouseUp={() => { posterIsPaintingRef.current = false; posterDragRef.current = null; }}
+                  onMouseLeave={() => { posterMouseRef.current.over = false; posterIsPaintingRef.current = false; posterDragRef.current = null; }}
+                  onMouseEnter={() => { posterMouseRef.current.over = true; }}
+                />
+              </div>
+            </div>
+
+            {/* Poster settings */}
+            <div style={{ background: "#1a1610", border: "1px solid #3a2e20", borderRadius: 14, padding: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 12, color: "#a07040", letterSpacing: 1, marginBottom: 10 }}>POSTER SETTINGS</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                {[
+                  ["cell size", posterCell, 3, 10, 1, setPosterCell, `${posterCell}px`],
+                  ["staves", staveCount, 0, 20, 1, setStaveCount, staveCount],
+                  ["notation seed", notationSeed, 1, 999, 1, setNotationSeed, notationSeed],
+                ].map(([name, val, min, max, step, set, lbl]) => (
+                  <label key={name} style={{ fontSize: 11, color: "#c8a96e", display: "block" }}>
+                    {name}
+                    <input type="range" min={min} max={max} step={step} value={val}
+                      onChange={(e) => set(Number(e.target.value))} style={{ marginTop: 3 }} />
+                    <span style={{ fontSize: 10, color: "rgba(200,169,110,0.5)" }}>{lbl}</span>
+                  </label>
+                ))}
+                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11, color: "#c8a96e", cursor: "pointer", paddingTop: 14 }}>
+                  <input type="checkbox" checked={fabricInvert} onChange={(e) => setFabricInvert(e.target.checked)} />
+                  dark mode
+                </label>
+              </div>
+            </div>
+
+            {/* Poster text layers */}
+            <div style={{ background: "#1a1610", border: "1px solid #3a2e20", borderRadius: 14, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 12, color: "#a07040", letterSpacing: 1 }}>TEXT LAYERS</div>
+                <button onClick={addPosterText}
+                  style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, cursor: "pointer", border: "1px solid #c8a96e", background: "transparent", color: "#c8a96e" }}>
+                  + add
+                </button>
+              </div>
+              {posterTexts.map((t) => (
+                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, padding: "6px 8px", borderRadius: 7,
+                  background: t.id === posterSelectedId ? "rgba(200,169,110,0.12)" : "transparent",
+                  border: `1px solid ${t.id === posterSelectedId ? "#c8a96e" : "#2e2416"}`, cursor: "pointer" }}
+                  onClick={() => setPosterSelectedId(t.id)}>
+                  <span style={{ fontSize: 11, color: "#c8a96e", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {t.content || "(empty)"}
+                  </span>
+                  <span style={{ fontSize: 10, color: "rgba(200,169,110,0.4)" }}>{t.knit ? "knit" : "text"}</span>
+                  <button onClick={(e) => { e.stopPropagation(); removePosterText(t.id); }}
+                    style={{ background: "none", border: "none", color: "#a07040", cursor: "pointer", fontSize: 13, padding: 0, lineHeight: 1 }}>✕</button>
+                </div>
+              ))}
+              {/* Selected text editor */}
+              {posterSelected && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #2e2416", display: "flex", flexDirection: "column", gap: 8 }}>
+                  <textarea value={posterSelected.content}
+                    onChange={(e) => updatePosterSelected({ content: e.target.value })}
+                    style={{ width: "100%", height: 60, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 6, padding: 6, fontSize: 12, boxSizing: "border-box", resize: "vertical" }} />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                    <label style={{ fontSize: 11, color: "#a07040", display: "block" }}>font size
+                      <input type="number" min={4} max={80} value={posterSelected.fontSize}
+                        onChange={(e) => updatePosterSelected({ fontSize: Number(e.target.value) })}
+                        style={{ marginTop: 3, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 12, width: "100%", boxSizing: "border-box" }} />
+                    </label>
+                    <label style={{ fontSize: 11, color: "#a07040", display: "block" }}>font
+                      <select value={posterSelected.fontFamily} onChange={(e) => updatePosterSelected({ fontFamily: e.target.value })}
+                        style={{ marginTop: 3, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 12, width: "100%", boxSizing: "border-box" }}>
+                        {["serif", "sans-serif", "monospace", "cursive", "fantasy"].map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <label style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 11, color: "#a07040", cursor: "pointer" }}>
+                      <input type="checkbox" checked={posterSelected.bold ?? false} onChange={(e) => updatePosterSelected({ bold: e.target.checked })} />
+                      bold
+                    </label>
+                    <label style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 11, color: "#a07040", cursor: "pointer" }}>
+                      <input type="checkbox" checked={posterSelected.knit !== false} onChange={(e) => updatePosterSelected({ knit: e.target.checked })} />
+                      knit style
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Poster overlay brush */}
+            <div style={{ background: "#1a1610", border: "1px solid #3a2e20", borderRadius: 14, padding: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 12, color: "#a07040", letterSpacing: 1, marginBottom: 8 }}>OVERLAY BRUSH</div>
+              <input type="file" accept="image/*,video/*" onChange={(e) => handlePosterFile(e.target.files?.[0])} />
+              {posterOvType && (
+                <>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                    <button onClick={() => setPosterActiveTool("select")}
+                      style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", border: `1px solid ${posterActiveTool === "select" ? "#c8a96e" : "#3a2e20"}`, background: posterActiveTool === "select" ? "#c8a96e" : "transparent", color: posterActiveTool === "select" ? "#000" : "#c8a96e" }}>
+                      select
+                    </button>
+                    <button onClick={() => setPosterActiveTool("brush")}
+                      style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", border: "1px solid #9060c0", background: posterActiveTool === "brush" ? "#9060c0" : "transparent", color: posterActiveTool === "brush" ? "#fff" : "#9060c0" }}>
+                      brush
+                    </button>
+                    {posterActiveTool === "brush" && (
+                      <>
+                        <button onClick={() => setPosterBrushMode("reveal")}
+                          style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", border: `1px solid ${posterBrushMode === "reveal" ? "#c8a96e" : "#3a2e20"}`, background: posterBrushMode === "reveal" ? "#c8a96e" : "transparent", color: posterBrushMode === "reveal" ? "#000" : "#c8a96e" }}>
+                          reveal
+                        </button>
+                        <button onClick={() => setPosterBrushMode("erase")}
+                          style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", border: "1px solid #c04040", background: posterBrushMode === "erase" ? "#c04040" : "transparent", color: posterBrushMode === "erase" ? "#fff" : "#c04040" }}>
+                          erase
+                        </button>
+                      </>
+                    )}
+                    <button onClick={removePosterOverlay}
+                      style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", border: "1px solid #c04040", background: "transparent", color: "#c04040" }}>
+                      remove
+                    </button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                    <label style={{ fontSize: 11, color: "#a07040", display: "block" }}>brush size
+                      <input type="range" min={1} max={20} value={posterBrushSize}
+                        onChange={(e) => setPosterBrushSize(Number(e.target.value))} style={{ marginTop: 3 }} />
+                      <span style={{ fontSize: 10, color: "rgba(200,169,110,0.5)" }}>{posterBrushSize} cells</span>
+                    </label>
+                    <label style={{ fontSize: 11, color: "#a07040", display: "block" }}>opacity
+                      <input type="range" min={0} max={1} step={0.01} value={posterOvOpacity}
+                        onChange={(e) => setPosterOvOpacity(Number(e.target.value))} style={{ marginTop: 3 }} />
+                      <span style={{ fontSize: 10, color: "rgba(200,169,110,0.5)" }}>{Math.round(posterOvOpacity * 100)}%</span>
+                    </label>
+                  </div>
+                  <label style={{ fontSize: 11, color: "#a07040", display: "block", marginTop: 6 }}>blend
+                    <select value={posterOvBlend} onChange={(e) => setPosterOvBlend(e.target.value)}
+                      style={{ marginTop: 3, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 11, display: "block", width: "100%" }}>
+                      {["multiply", "screen", "overlay", "soft-light", "hard-light", "color-burn", "difference", "normal"].map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </label>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    <button onClick={() => { const mc = posterMaskRef.current; if (mc) { const ctx = mc.getContext("2d"); ctx.clearRect(0,0,mc.width,mc.height); posterParamRef.current.dirty = true; } }}
+                      style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", border: "1px solid #3a2e20", background: "transparent", color: "#a07040" }}>
+                      clear mask
+                    </button>
+                    <button onClick={() => { const mc = posterMaskRef.current; if (mc) { const ctx = mc.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0,0,mc.width,mc.height); posterParamRef.current.dirty = true; } }}
+                      style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", border: "1px solid #3a2e20", background: "transparent", color: "#a07040" }}>
+                      fill mask
+                    </button>
+                    {posterOvType === "video" && (
+                      <button onClick={() => { const me = posterMediaRef.current; if (!me) return; posterOvVideoPlaying ? me.pause() : me.play().catch(() => {}); }}
+                        style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", border: "1px solid #3a2e20", background: "transparent", color: "#a07040" }}>
+                        {posterOvVideoPlaying ? "pause" : "play"}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+          </div>
+        )}
+
       </div>
     </div>
   );
