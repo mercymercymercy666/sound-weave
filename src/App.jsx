@@ -1540,7 +1540,14 @@ export default function App() {
     else if (patternMode === "chart")  drawChart(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
     else if (patternMode === "stitch") drawStitch(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
     else                               drawWeave(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
-  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, stitchInvert]);
+    if (editInvert) {
+      const ctx = c.getContext("2d");
+      ctx.globalCompositeOperation = "difference";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.globalCompositeOperation = "source-over";
+    }
+  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, stitchInvert, editInvert]);
 
   // Video guide — sample frames into imageGuide at ~15fps
   useEffect(() => {
@@ -1692,12 +1699,12 @@ export default function App() {
     ovParamRef.current = { ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode };
   }, [ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode]);
 
-  useEffect(() => { editInvertRef.current = editInvert; }, [editInvert]);
+  editInvertRef.current = editInvert; // inline — always current before RAF reads it
 
   // Sync perform window background with editInvert
   useEffect(() => {
     const pw = performWinRef.current;
-    if (pw && !pw.closed) pw.postMessage({ type: "setBg", color: editInvert ? "#ffffff" : "#000000" }, "*");
+    if (pw && !pw.closed) pw.postMessage({ type: "setBg", color: editInvert ? "#000000" : "#000000" }, "*");
   }, [editInvert, performOpen]);
 
   // Brush undo — Ctrl+Z restores last mask snapshot
@@ -1766,12 +1773,6 @@ export default function App() {
         const ob = ovParamRef.current.ovBlend ?? "source-over";
         ctx.globalCompositeOperation = ob;
         ctx.drawImage(oc, 0, 0);
-        ctx.globalCompositeOperation = "source-over";
-      }
-      if (editInvertRef.current) {
-        ctx.globalCompositeOperation = "difference";
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, W, H);
         ctx.globalCompositeOperation = "source-over";
       }
       createImageBitmap(offCanvas).then(bmp => {
@@ -2331,7 +2332,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                 onMouseMove={(e) => { if (ovActiveTool === "grid" && mouseDown) paintAtEvent(e); }}
                 onMouseUp={() => setMouseDown(false)}
                 onMouseLeave={() => setMouseDown(false)}
-                style={{ display: "block", position: "relative", cursor: ovActiveTool === "grid" ? "crosshair" : "default", filter: editInvert ? "invert(1)" : "none" }}
+                style={{ display: "block", position: "relative", cursor: ovActiveTool === "grid" ? "crosshair" : "default" }}
               />
               {/* notation overlay */}
               <canvas ref={notationCanvasRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
