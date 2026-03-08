@@ -2013,6 +2013,8 @@ function makeDraggable(div,resize){
   window.addEventListener('mouseup',function(){resizing=false;});
 }
 function addClip(id,dataUrl,mediaType,filter,mix){
+  var existing=document.getElementById('clip-'+id);
+  if(existing){var inn=existing.querySelector('img,video');if(inn&&filter)inn.style.filter=filter;if(mix&&mix!=='normal')existing.style.mixBlendMode=mix;else existing.style.mixBlendMode='';return;}
   var clips=document.getElementById('clips');
   var div=document.createElement('div');div.id='clip-'+id;div.className='clip';
   div.style.cssText='left:80px;top:80px;width:280px;height:280px;';
@@ -2063,7 +2065,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
     if (!performWinRef.current || performWinRef.current.closed) return;
     const filter = CLIP_STYLES[clipStyles[clip.id] ?? "warm"] ?? WARM;
     const mix = clipBlends[clip.id] ?? "normal";
-    performWinRef.current.postMessage({ type: "addClip", id: clip.id + Date.now(), dataUrl: clip.blobUrl, mediaType: clip.type, filter, mix }, "*");
+    performWinRef.current.postMessage({ type: "addClip", id: clip.id, dataUrl: clip.blobUrl, mediaType: clip.type, filter, mix }, "*");
   }
 
   const energyAll = useMemo(() => {
