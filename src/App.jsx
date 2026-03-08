@@ -1520,7 +1520,15 @@ export default function App() {
     else if (patternMode === "chart")  drawChart(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
     else if (patternMode === "stitch") drawStitch(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
     else                               drawWeave(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
-  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, stitchInvert]);
+    // Apply pixel-level invert so it also works in perform window
+    if (editInvert) {
+      const ctx = c.getContext("2d");
+      ctx.globalCompositeOperation = "difference";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.globalCompositeOperation = "source-over";
+    }
+  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, stitchInvert, editInvert]);
 
   // Video guide — sample frames into imageGuide at ~15fps
   useEffect(() => {
@@ -2080,6 +2088,7 @@ function addClip(id,dataUrl,mediaType){
   const colsRef = useRef(cols); colsRef.current = cols;
   const bgImgRef = useRef(bgImg); bgImgRef.current = bgImg;
   const rowsRef = useRef(rows); rowsRef.current = rows;
+  const layersRef = useRef(LAYERS); layersRef.current = LAYERS;
 
   // ── POSTER state ─────────────────────────────────────────────────────────
   const [posterOpen, setPosterOpen] = useState(false);
@@ -2134,11 +2143,9 @@ function addClip(id,dataUrl,mediaType){
       let needsDraw = posterParamRef.current.dirty;
       if (now - lastSyncMs >= 100) {
         lastSyncMs = now;
-        const gw = colsRef.current; const gh = rowsRef.current;
-        if (gw !== posterParamRef.current.gridW || gh !== posterParamRef.current.gridH) {
-          posterParamRef.current.gridW = gw; posterParamRef.current.gridH = gh;
-        }
-        posterParamRef.current.fabricLayers = LAYERS.map(L => ({
+        posterParamRef.current.gridW = colsRef.current;
+        posterParamRef.current.gridH = rowsRef.current;
+        posterParamRef.current.fabricLayers = layersRef.current.map(L => ({
           color: L.color, alpha: alphasRef.current[L.id] ?? 0.55, grid01: gridsRef.current[L.id],
         }));
         needsDraw = true;
@@ -2321,7 +2328,7 @@ function addClip(id,dataUrl,mediaType){
             </div>
 
             {/* Canvas stack: overlayBg (behind) → canvas → notation → cursor */}
-            <div style={{ position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)`, filter: editInvert ? "invert(1)" : "none" }}>
+            <div style={{ position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)`, }}>
               {/* overlay image/video — BEHIND stitches */}
               {/* main stitch canvas */}
               <canvas ref={canvasRef}
