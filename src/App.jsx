@@ -604,6 +604,239 @@ function drawChart(canvas, grids, layers, bgImg, cell, opts = {}) {
   }
 }
 
+// Average FFT bins in a frequency band [lo01, hi01] (0..1 fractions of bin count)
+function bandAvg(bins, lo01, hi01) {
+  const n = bins.length;
+  const lo = Math.floor(lo01 * n);
+  const hi = Math.min(n - 1, Math.floor(hi01 * n));
+  if (lo > hi) return 0;
+  let sum = 0;
+  for (let i = lo; i <= hi; i++) sum += bins[i];
+  return sum / ((hi - lo + 1) * 255);
+}
+
+// Draw Artikulation-style notation marks at a grid row based on frequency bands
+function drawNotationAtRow(ctx, bins, energy01, cursorY, color, alpha, cell, cols) {
+  if (!bins || bins.length === 0 || energy01 < 0.01) return;
+  const sub  = bandAvg(bins, 0.00, 0.03);
+  const bass = bandAvg(bins, 0.03, 0.10);
+  const lmid = bandAvg(bins, 0.10, 0.25);
+  const mid  = bandAvg(bins, 0.25, 0.50);
+  const hi   = bandAvg(bins, 0.50, 0.80);
+  const air  = bandAvg(bins, 0.80, 1.00);
+  const cy = cursorY * cell + cell * 0.5;
+  const totalW = cols * cell;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  if (sub > 0.04) {
+    const count = Math.max(1, Math.floor(sub * 5));
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.5, cell * 0.12); ctx.setLineDash([]);
+    for (let i = 0; i < count; i++) {
+      const cx = ((i + 0.5) / count) * totalW;
+      const r  = cell * (0.3 + sub * 0.45);
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  if (bass > 0.04) {
+    const count = Math.max(1, Math.floor(bass * 9));
+    ctx.fillStyle = color;
+    const h = Math.max(1.5, cell * 0.16);
+    for (let i = 0; i < count; i++) {
+      const x0 = (i / count) * totalW + cell * 0.08;
+      const w  = (totalW / count) * (0.4 + bass * 0.55);
+      ctx.fillRect(x0, cy - h * 0.5, w, h);
+    }
+  }
+  if (lmid > 0.04) {
+    const count = Math.max(2, Math.floor(lmid * 12));
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(1, cell * 0.10); ctx.setLineDash([]);
+    for (let i = 0; i < count; i++) {
+      const cx = ((i + 0.5) / count) * totalW;
+      const r  = cell * (0.20 + lmid * 0.22);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r * 0.6, cy);
+      ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r * 0.6, cy);
+      ctx.closePath(); ctx.stroke();
+    }
+  }
+  if (mid > 0.04) {
+    const count = Math.max(2, Math.floor(mid * 16));
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.2, cell * 0.13); ctx.lineCap = "round"; ctx.setLineDash([]);
+    for (let i = 0; i < count; i++) {
+      const cx = ((i + 0.5) / count) * totalW;
+      const h  = cell * (0.28 + mid * 0.42);
+      ctx.beginPath();
+      ctx.moveTo(cx - h * 0.5, cy - h * 0.4); ctx.lineTo(cx, cy + h * 0.5); ctx.lineTo(cx + h * 0.5, cy - h * 0.4);
+      ctx.stroke();
+    }
+  }
+  if (hi > 0.03) {
+    const count = Math.max(3, Math.floor(hi * 22));
+    ctx.fillStyle = color;
+    for (let i = 0; i < count; i++) {
+      const t  = ((i * 1.618 + cursorY * 0.31) % 1 + 1) % 1;
+      const cx = t * totalW;
+      const r  = Math.max(1.5, cell * (0.07 + hi * 0.10));
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  if (air > 0.03) {
+    const count = Math.max(2, Math.floor(air * 14));
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(0.8, cell * 0.09); ctx.lineCap = "round"; ctx.setLineDash([]);
+    for (let i = 0; i < count; i++) {
+      const t  = ((i * 2.618 + cursorY * 0.17) % 1 + 1) % 1;
+      const cx = t * totalW;
+      const r  = cell * (0.14 + air * 0.20);
+      const d  = r * 0.72;
+      ctx.beginPath();
+      ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+      ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
+      ctx.moveTo(cx - d, cy - d); ctx.lineTo(cx + d, cy + d);
+      ctx.moveTo(cx + d, cy - d); ctx.lineTo(cx - d, cy + d);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// Draws a parchment/twilight knit-stitch pattern — V-shapes per cell, per-layer color fills
+function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
+  const { rows, cols, imageOpacity = 0.3, maskImg = null, invert = false } = opts;
+  canvas.width = cols * cell;
+  canvas.height = rows * cell;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+
+  ctx.fillStyle = invert ? "#16121e" : "#fdf3e7";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (bgImg) {
+    ctx.globalAlpha = imageOpacity;
+    ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = 1;
+  }
+
+  // Base V-texture for every cell
+  ctx.beginPath();
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const cx = x * cell, cy = y * cell;
+      ctx.moveTo(cx + cell * 0.12, cy + cell * 0.10);
+      ctx.lineTo(cx + cell * 0.50, cy + cell * 0.88);
+      ctx.lineTo(cx + cell * 0.88, cy + cell * 0.10);
+    }
+  }
+  ctx.strokeStyle = invert ? "rgba(220,185,130,0.18)" : "rgba(140,95,40,0.20)";
+  ctx.lineWidth = Math.max(0.7, cell * 0.09);
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.stroke();
+
+  const pad = Math.max(1, cell * 0.10);
+
+  for (const L of layers) {
+    const grid01 = grids[L.id];
+    if (!grid01) continue;
+    const [lr, lg, lb] = parseColor(L.color);
+    const colorStr = `rgba(${lr},${lg},${lb},1)`;
+
+    ctx.fillStyle = colorStr;
+    ctx.globalAlpha = 0.25;
+    for (let y = 0; y < rows; y++) {
+      const row = grid01[y]; if (!row) continue;
+      for (let x = 0; x < cols; x++)
+        if (row[x] === 1) ctx.fillRect(x * cell + pad, y * cell + pad, cell - pad * 2, cell - pad * 2);
+    }
+
+    ctx.strokeStyle = colorStr;
+    ctx.lineWidth = Math.max(1.2, cell * 0.14);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    for (let y = 0; y < rows; y++) {
+      const row = grid01[y]; if (!row) continue;
+      for (let x = 0; x < cols; x++) {
+        if (row[x] === 1) {
+          const cx = x * cell, cy = y * cell;
+          ctx.moveTo(cx + cell * 0.12, cy + cell * 0.10);
+          ctx.lineTo(cx + cell * 0.50, cy + cell * 0.88);
+          ctx.lineTo(cx + cell * 0.88, cy + cell * 0.10);
+        }
+      }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  if (maskImg) {
+    for (const L of layers) {
+      const grid01 = grids[L.id]; if (!grid01) continue;
+      for (let y = 0; y < rows; y++) {
+        const row = grid01[y]; if (!row) continue;
+        for (let x = 0; x < cols; x++) {
+          if (row[x] === 1) {
+            const sw = cell - pad * 2, sh = cell - pad * 2;
+            const px = x * cell + pad, py = y * cell + pad;
+            ctx.save();
+            ctx.beginPath(); ctx.rect(px, py, sw, sh); ctx.clip();
+            const mw = maskImg.naturalWidth / cols, mh = maskImg.naturalHeight / rows;
+            ctx.globalAlpha = 0.9;
+            ctx.drawImage(maskImg, x * mw, y * mh, mw, mh, px, py, sw, sh);
+            ctx.restore();
+          }
+        }
+      }
+    }
+  }
+}
+
+// Reveals a media element (image or video) through a brush-painted mask canvas
+function drawMediaOverlay(canvas, mediaEl, maskCanvas, opacity, blendMode) {
+  if (!mediaEl || !maskCanvas) return;
+  const W = canvas.width, H = canvas.height;
+  if (!W || !H) return;
+  const mw = mediaEl.videoWidth ?? mediaEl.naturalWidth ?? W;
+  const mh = mediaEl.videoHeight ?? mediaEl.naturalHeight ?? H;
+  if (!mw || !mh) return;
+  const off = document.createElement("canvas");
+  off.width = W; off.height = H;
+  const offCtx = off.getContext("2d");
+  const scale = Math.max(W / mw, H / mh);
+  offCtx.drawImage(mediaEl, (W - mw * scale) / 2, (H - mh * scale) / 2, mw * scale, mh * scale);
+  offCtx.globalCompositeOperation = "destination-in";
+  offCtx.drawImage(maskCanvas, 0, 0, W, H);
+  const ctx = canvas.getContext("2d");
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.globalCompositeOperation = blendMode;
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+}
+
+async function imageToGrid01(file, rows, cols, { threshold = 0.5, invert = false } = {}) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const c = document.createElement("canvas");
+    c.width = cols; c.height = rows;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cols, rows);
+    ctx.drawImage(img, 0, 0, cols, rows);
+    const data = ctx.getImageData(0, 0, cols, rows).data;
+    const grid = makeGrid(rows, cols, 0);
+    for (let y = 0; y < rows; y++)
+      for (let x = 0; x < cols; x++) {
+        const i = (y * cols + x) * 4;
+        const lum = (data[i] * 0.2126 + data[i+1] * 0.7152 + data[i+2] * 0.0722) / 255;
+        let bit = lum < threshold ? 1 : 0;
+        if (invert) bit = bit ? 0 : 1;
+        grid[y][x] = bit;
+      }
+    return grid;
+  } finally { URL.revokeObjectURL(url); }
+}
+
 // ---- AUDIO LAYER ENGINE ----
 function useAudioLayer() {
   const audioCtxRef = useRef(null);
@@ -704,7 +937,7 @@ function spectralCentroid01(bins) {
   return den > 1e-6 ? clamp(num / den, 0, 1) : 0;
 }
 
-function brushRowFromAudio({ bins, cols, y, energy01, threshold, tSec }) {
+function brushRowFromAudio({ bins, cols, y, energy01, threshold, tSec, guideRow = null, imageMode = "OFF" }) {
   const out = new Array(cols).fill(0);
   if (!bins || bins.length === 0) return out;
   const centroid = spectralCentroid01(bins);
@@ -715,10 +948,14 @@ function brushRowFromAudio({ bins, cols, y, energy01, threshold, tSec }) {
   for (let x = 0; x < cols; x++) {
     const idx = Math.floor((x / cols) * bins.length);
     const v = (bins[idx] ?? 0) / 255;
-    let bit = v >= threshold ? 1 : 0;
+    let th = threshold;
+    if (imageMode === "BIAS" && guideRow && guideRow[x] === 1) th = clamp(threshold - 0.18, 0, 1);
+    let bit = v >= th ? 1 : 0;
     if (Math.abs(x - cursorX) <= thick) bit = 1;
     const stripes = Math.sin(phase + x * 0.35) > 0.55 ? 1 : 0;
-    if (energy01 > 0.12) bit = bit | (stripes & (v > threshold * 0.9 ? 1 : 0));
+    if (energy01 > 0.12) bit = bit | (stripes & (v > th * 0.9 ? 1 : 0));
+    if (imageMode === "MASK"  && guideRow) bit = guideRow[x] === 1 ? bit : 0;
+    if (imageMode === "CARVE" && guideRow) bit = guideRow[x] === 1 ? 0 : bit;
     out[x] = bit;
   }
   return out;
@@ -744,8 +981,8 @@ function combineN(layerGrids, mode = "OR") {
   return out;
 }
 
-const LAYER_COLORS = { A: "#ff3333", B: "#0088ff", C: "#00c878", D: "#ff8c00" };
-const IDS = ["A", "B", "C", "D"];
+const LAYER_COLORS = { A: "#ff3333", B: "#0088ff", C: "#00c878", D: "#ff8c00", F: "#00d4d4", G: "#ff66cc", H: "#b0e050" };
+const IDS = ["A", "B", "C", "D", "F", "G", "H"];
 
 export default function App() {
   const LAYERS = useMemo(() => [
@@ -753,6 +990,9 @@ export default function App() {
     { id: "B", name: "AUDIO 1", type: "file", color: "rgba(0,140,255,1)"   },
     { id: "C", name: "AUDIO 2", type: "file", color: "rgba(0,200,120,1)"   },
     { id: "D", name: "AUDIO 3", type: "file", color: "rgba(255,160,0,1)"   },
+    { id: "F", name: "AUDIO 4", type: "file", color: "rgba(0,212,212,1)"   },
+    { id: "G", name: "AUDIO 5", type: "file", color: "rgba(255,102,204,1)" },
+    { id: "H", name: "AUDIO 6", type: "file", color: "rgba(176,224,80,1)"  },
   ], []);
 
   const [cols, setCols] = useState(60);
@@ -773,7 +1013,8 @@ export default function App() {
   const [posterizeLevels, setPosterizeLevels] = useState(5);
   const [bgImg, setBgImg] = useState(null);
   const [maskImg, setMaskImg] = useState(null);
-  const [patternMode, setPatternMode] = useState("weave"); // "weave" | "lace"
+  const [patternMode, setPatternMode] = useState("weave"); // "weave"|"lace"|"chart"|"stitch"
+  const [stitchInvert, setStitchInvert] = useState(false);
 
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
@@ -795,17 +1036,42 @@ export default function App() {
   const [drawValue, setDrawValue] = useState(1);
   const [mouseDown, setMouseDown] = useState(false);
 
-  const [modes, setModes]           = useState({ A: "off", B: "off", C: "off", D: "off" });
-  const [speeds, setSpeeds]         = useState({ A: 10,  B: 10,  C: 10,  D: 10 });
-  const [thresholds, setThresholds] = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55 });
+  const [modes, setModes]           = useState({ A: "off", B: "off", C: "off", D: "off", F: "off", G: "off", H: "off" });
+  const [speeds, setSpeeds]         = useState({ A: 10,  B: 10,  C: 10,  D: 10,  F: 10,  G: 10,  H: 10 });
+  const [thresholds, setThresholds] = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55 });
+  const [alphas, setAlphas]         = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55 });
+
+  // Image guide
+  const [imageGuide, setImageGuide] = useState(() => makeGrid(80, 60, 0));
+  const [imageMode, setImageMode] = useState("OFF"); // "OFF"|"MASK"|"CARVE"|"BIAS"
+  const [imgThreshold, setImgThreshold] = useState(0.50);
+  const [imgInvert, setImgInvert] = useState(false);
+  const [showImageGuide, setShowImageGuide] = useState(true);
+  const [videoGuideActive, setVideoGuideActive] = useState(false);
+
+  // Notation + score overlays
+  const [showNotation, setShowNotation] = useState(false);
+  const [showScore, setShowScore] = useState(false);
+
+  // Brush/media overlay
+  const [ovActiveTool, setOvActiveTool] = useState("grid"); // "grid"|"brush"
+  const [ovType, setOvType]             = useState(null);   // null|"image"|"video"
+  const [ovBlend, setOvBlend]           = useState("multiply");
+  const [ovOpacity, setOvOpacity]       = useState(0.85);
+  const [ovBrushSize, setOvBrushSize]   = useState(6);
+  const [ovBrushMode, setOvBrushMode]   = useState("reveal"); // "reveal"|"erase"
+  const [ovVideoPlaying, setOvVideoPlaying] = useState(false);
 
   const audioA = useAudioLayer();
   const audioB = useAudioLayer();
   const audioC = useAudioLayer();
   const audioD = useAudioLayer();
+  const audioF = useAudioLayer();
+  const audioG = useAudioLayer();
+  const audioH = useAudioLayer();
   const audioMap = useMemo(
-    () => ({ A: audioA, B: audioB, C: audioC, D: audioD }),
-    [audioA, audioB, audioC, audioD]
+    () => ({ A: audioA, B: audioB, C: audioC, D: audioD, F: audioF, G: audioG, H: audioH }),
+    [audioA, audioB, audioC, audioD, audioF, audioG, audioH]
   );
   const audioMapRef = useRef(audioMap);
   audioMapRef.current = audioMap;
@@ -813,7 +1079,22 @@ export default function App() {
   const audioRefB = useRef(null);
   const audioRefC = useRef(null);
   const audioRefD = useRef(null);
+  const audioRefF = useRef(null);
+  const audioRefG = useRef(null);
+  const audioRefH = useRef(null);
   const canvasRef = useRef(null);
+  const notationCanvasRef = useRef(null);
+  const scoreCanvasRef    = useRef(null);
+  const videoRef          = useRef(null);
+  const overlayCanvasRef  = useRef(null);
+  const overlayMaskRef    = useRef(null);
+  const overlayMediaRef   = useRef(null);
+  const ovIsPaintingRef   = useRef(false);
+  const ovMouseRef        = useRef({ x: 0, y: 0, over: false });
+  const ovParamRef        = useRef({});
+  const rowCursorRef      = useRef(rowCursor);
+  rowCursorRef.current    = rowCursor;
+  const scoreHistRef      = useRef({});
 
   // Resize grids when rows/cols change
   useEffect(() => {
@@ -826,6 +1107,7 @@ export default function App() {
     };
     setGrids((prev) => { const next = { ...prev }; for (const L of LAYERS) next[L.id] = resize(prev[L.id]); return next; });
     setRowCursor((prev) => { const next = { ...prev }; for (const L of LAYERS) next[L.id] = 0; return next; });
+    setImageGuide((prev) => resize(prev));
   }, [rows, cols, LAYERS]);
 
   // Wire modes → audio start/stop
@@ -833,11 +1115,14 @@ export default function App() {
   useEffect(() => { (async () => { try { if (modes.B === "off") await audioB.stop(); if (modes.B === "file") await audioB.startFileFromElement(audioRefB.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, B: "off" })); } })(); }, [modes.B]); // eslint-disable-line
   useEffect(() => { (async () => { try { if (modes.C === "off") await audioC.stop(); if (modes.C === "file") await audioC.startFileFromElement(audioRefC.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, C: "off" })); } })(); }, [modes.C]); // eslint-disable-line
   useEffect(() => { (async () => { try { if (modes.D === "off") await audioD.stop(); if (modes.D === "file") await audioD.startFileFromElement(audioRefD.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, D: "off" })); } })(); }, [modes.D]); // eslint-disable-line
+  useEffect(() => { (async () => { try { if (modes.F === "off") await audioF.stop(); if (modes.F === "file") await audioF.startFileFromElement(audioRefF.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, F: "off" })); } })(); }, [modes.F]); // eslint-disable-line
+  useEffect(() => { (async () => { try { if (modes.G === "off") await audioG.stop(); if (modes.G === "file") await audioG.startFileFromElement(audioRefG.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, G: "off" })); } })(); }, [modes.G]); // eslint-disable-line
+  useEffect(() => { (async () => { try { if (modes.H === "off") await audioH.stop(); if (modes.H === "file") await audioH.startFileFromElement(audioRefH.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, H: "off" })); } })(); }, [modes.H]); // eslint-disable-line
   // Audio → grid paint loop
   useEffect(() => {
     let raf = null;
     let last = performance.now();
-    const acc = { A: 0, B: 0, C: 0, D: 0 };
+    const acc = { A: 0, B: 0, C: 0, D: 0, F: 0, G: 0, H: 0 };
 
     const step = (now) => {
       const dt = (now - last) / 1000;
@@ -857,7 +1142,7 @@ export default function App() {
               const bins = audio.binsRef.current;
               const energy01 = audio.energy;
               const y = nextCursor[id] ?? 0;
-              const row = brushRowFromAudio({ bins, cols, y, energy01, threshold: thresholds[id] ?? 0.55, tSec });
+              const row = brushRowFromAudio({ bins, cols, y, energy01, threshold: thresholds[id] ?? 0.55, tSec, guideRow: imageGuide?.[y], imageMode });
               if (nextGrids === prevGrids) nextGrids = { ...prevGrids };
               const g = nextGrids[id].map((r) => r.slice());
               g[y] = row;
@@ -874,20 +1159,201 @@ export default function App() {
 
     raf = requestAnimationFrame(step);
     return () => raf && cancelAnimationFrame(raf);
-  }, [LAYERS, modes, speeds, thresholds, cols, rows, symmetry]);
+  }, [LAYERS, modes, speeds, thresholds, cols, rows, symmetry, imageGuide, imageMode]);
 
   const combinedGrid = useMemo(() => combineN(grids, combineMode), [grids, combineMode]);
   const knit = useMemo(() => instructionsFromGrid(combinedGrid, { floatsWarnOver: floatWarnOver }), [combinedGrid, floatWarnOver]);
 
-  // Draw canvas — dispatch to weave or lace renderer
+  // Draw canvas
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
-    const drawOpts = { rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg };
-    if (patternMode === "lace") drawLace(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
-    else if (patternMode === "chart") drawChart(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
-    else drawWeave(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
-  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg]);
+    const drawOpts = { rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, invert: stitchInvert };
+    if (patternMode === "lace")        drawLace(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
+    else if (patternMode === "chart")  drawChart(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
+    else if (patternMode === "stitch") drawStitch(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
+    else                               drawWeave(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
+  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, stitchInvert]);
+
+  // Video guide — sample frames into imageGuide at ~15fps
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid || !videoGuideActive) return;
+    let raf;
+    let lastMs = 0;
+    const step = (now) => {
+      if (vid.readyState >= 2 && now - lastMs >= 1000 / 15) {
+        lastMs = now;
+        const c = document.createElement("canvas");
+        c.width = cols; c.height = rows;
+        const ctx2 = c.getContext("2d", { willReadFrequently: true });
+        ctx2.fillStyle = "#fff"; ctx2.fillRect(0, 0, cols, rows);
+        ctx2.drawImage(vid, 0, 0, cols, rows);
+        const data = ctx2.getImageData(0, 0, cols, rows).data;
+        const g = makeGrid(rows, cols, 0);
+        for (let y = 0; y < rows; y++)
+          for (let x = 0; x < cols; x++) {
+            const i = (y * cols + x) * 4;
+            const lum = (data[i] * 0.2126 + data[i+1] * 0.7152 + data[i+2] * 0.0722) / 255;
+            let bit = lum < imgThreshold ? 1 : 0;
+            if (imgInvert) bit = bit ? 0 : 1;
+            g[y][x] = bit;
+          }
+        setImageGuide(symmetry ? mirrorVertical01(g) : g);
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [videoGuideActive, cols, rows, imgThreshold, imgInvert, symmetry]);
+
+  // Notation overlay RAF loop
+  useEffect(() => {
+    const nc = notationCanvasRef.current;
+    if (!showNotation) {
+      if (nc) { const ctx = nc.getContext("2d"); ctx.clearRect(0, 0, nc.width, nc.height); }
+      return;
+    }
+    let raf;
+    const step = () => {
+      const nc2 = notationCanvasRef.current;
+      const sc = canvasRef.current;
+      if (!nc2 || !sc) { raf = requestAnimationFrame(step); return; }
+      if (nc2.width !== sc.width || nc2.height !== sc.height) { nc2.width = sc.width; nc2.height = sc.height; }
+      const ctx = nc2.getContext("2d");
+      ctx.clearRect(0, 0, nc2.width, nc2.height);
+      const cs = clamp(cell, 4, 30);
+      for (const L of LAYERS) {
+        if (modes[L.id] === "off") continue;
+        const audio = audioMapRef.current[L.id];
+        const bins = audio?.binsRef.current;
+        const energy01 = audio?.energy ?? 0;
+        if (!bins || energy01 < 0.01) continue;
+        const cursorY = rowCursorRef.current?.[L.id] ?? 0;
+        const prevY = (cursorY - 1 + rows) % rows;
+        const a = alphas[L.id] ?? 0.55;
+        drawNotationAtRow(ctx, bins, energy01 * 0.35, prevY,   L.color, a * 0.45, cs, cols);
+        drawNotationAtRow(ctx, bins, energy01,        cursorY, L.color, a,         cs, cols);
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => { if (raf) cancelAnimationFrame(raf); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showNotation, LAYERS, modes, alphas, cell, cols, rows]);
+
+  // Score view RAF loop
+  const SCORE_LANE_H = 28;
+  const SCORE_COLS   = 220;
+  useEffect(() => {
+    const sc = scoreCanvasRef.current;
+    if (!showScore) {
+      if (sc) { const ctx = sc.getContext("2d"); ctx.clearRect(0, 0, sc.width, sc.height); }
+      return;
+    }
+    let raf;
+    const step = () => {
+      const sc2 = scoreCanvasRef.current;
+      const stitchC = canvasRef.current;
+      if (!sc2 || !stitchC) { raf = requestAnimationFrame(step); return; }
+      const W = stitchC.width;
+      const H = LAYERS.length * SCORE_LANE_H;
+      if (sc2.width !== W || sc2.height !== H) { sc2.width = W; sc2.height = H; }
+      const hist = scoreHistRef.current;
+      for (const L of LAYERS) {
+        const audio = audioMapRef.current[L.id];
+        const bins = audio?.binsRef.current;
+        const energy01 = audio?.energy ?? 0;
+        if (!hist[L.id]) hist[L.id] = [];
+        if (modes[L.id] !== "off" && bins && energy01 > 0.005)
+          hist[L.id].push({ sub: bandAvg(bins,0,0.03), bass: bandAvg(bins,0.03,0.10), lmid: bandAvg(bins,0.10,0.25), mid: bandAvg(bins,0.25,0.50), hi: bandAvg(bins,0.50,0.80), air: bandAvg(bins,0.80,1), energy: energy01 });
+        else hist[L.id].push(null);
+        if (hist[L.id].length > SCORE_COLS) hist[L.id].shift();
+      }
+      const ctx = sc2.getContext("2d");
+      ctx.fillStyle = "#0a0a0a"; ctx.fillRect(0, 0, W, H);
+      for (let li = 0; li < LAYERS.length; li++) {
+        const L = LAYERS[li];
+        const laneTop = li * SCORE_LANE_H;
+        const laneMid = laneTop + SCORE_LANE_H * 0.5;
+        ctx.globalAlpha = 0.22; ctx.strokeStyle = L.color; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(18, laneMid); ctx.lineTo(W, laneMid); ctx.stroke();
+        ctx.globalAlpha = 0.8; ctx.fillStyle = L.color;
+        ctx.font = "bold 9px ui-monospace, monospace"; ctx.fillText(L.id, 4, laneMid + 3);
+        ctx.globalAlpha = 1;
+        const frames = hist[L.id] || [];
+        const colW = (W - 20) / SCORE_COLS;
+        for (let ci = 0; ci < frames.length; ci++) {
+          const frame = frames[ci]; if (!frame) continue;
+          const x = 20 + ci * colW;
+          const age = ci / frames.length;
+          const bands = [frame.sub, frame.bass, frame.lmid, frame.mid, frame.hi, frame.air];
+          const maxV = Math.max(...bands); if (maxV < 0.03) continue;
+          const domIdx = bands.indexOf(maxV);
+          const centDen = bands.reduce((s,v) => s+v, 0);
+          const centNum = bands.reduce((s,v,i) => s+v*i, 0);
+          const cent01 = centDen > 1e-6 ? centNum / centDen / 5 : 0.5;
+          const yOff = (cent01 - 0.5) * SCORE_LANE_H * 0.72;
+          const cy = laneMid + yOff;
+          const r = Math.max(2, SCORE_LANE_H * 0.18 * (0.4 + frame.energy * 0.9));
+          ctx.globalAlpha = (0.15 + age * 0.85) * (0.55 + frame.energy * 0.45);
+          ctx.strokeStyle = L.color; ctx.fillStyle = L.color;
+          ctx.lineWidth = Math.max(1, r * 0.25); ctx.lineCap = "round";
+          ctx.beginPath();
+          switch (domIdx) {
+            case 0: ctx.arc(x, cy, r, 0, Math.PI*2); ctx.stroke(); break;
+            case 1: ctx.fillRect(x - r*0.22, cy - r, r*0.44, r*2); break;
+            case 2: ctx.moveTo(x, cy-r); ctx.lineTo(x+r*0.6,cy); ctx.lineTo(x,cy+r); ctx.lineTo(x-r*0.6,cy); ctx.closePath(); ctx.stroke(); break;
+            case 3: ctx.moveTo(x-r*0.55,cy-r*0.45); ctx.lineTo(x,cy+r*0.55); ctx.lineTo(x+r*0.55,cy-r*0.45); ctx.stroke(); break;
+            case 4: ctx.arc(x, cy, r*0.55, 0, Math.PI*2); ctx.fill(); break;
+            case 5: ctx.moveTo(x-r,cy); ctx.lineTo(x+r,cy); ctx.moveTo(x,cy-r); ctx.lineTo(x,cy+r); ctx.stroke(); break;
+          }
+        }
+      }
+      ctx.globalAlpha = 0.35; ctx.strokeStyle = "#39ff14"; ctx.lineWidth = 1;
+      ctx.setLineDash([3,4]); ctx.beginPath(); ctx.moveTo(W-1,0); ctx.lineTo(W-1,H); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => { if (raf) cancelAnimationFrame(raf); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showScore, LAYERS, modes]);
+
+  // Overlay param sync
+  useEffect(() => {
+    ovParamRef.current = { ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode };
+  }, [ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode]);
+
+  // Overlay RAF loop
+  useEffect(() => {
+    let raf;
+    const step = () => {
+      const oc = overlayCanvasRef.current;
+      const sc = canvasRef.current;
+      const mc = overlayMaskRef.current;
+      const me = overlayMediaRef.current;
+      const { ovType: ot, ovBlend: blend, ovOpacity: opacity, ovActiveTool: tool, ovBrushSize: bs } = ovParamRef.current;
+      if (!oc || !sc) { raf = requestAnimationFrame(step); return; }
+      const W = sc.width, H = sc.height;
+      if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
+      const ctx = oc.getContext("2d");
+      ctx.clearRect(0, 0, W, H);
+      if (ot && me && mc) drawMediaOverlay(oc, me, mc, opacity, blend);
+      if (tool === "brush" && ot && ovMouseRef.current.over) {
+        const cs = clamp(cell, 4, 30);
+        ctx.save();
+        ctx.strokeStyle = ovParamRef.current.ovBrushMode === "erase" ? "rgba(255,80,80,0.85)" : "rgba(57,255,20,0.85)";
+        ctx.lineWidth = 1.5; ctx.setLineDash([3,3]);
+        ctx.beginPath(); ctx.arc(ovMouseRef.current.x, ovMouseRef.current.y, bs * cs, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]); ctx.restore();
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cell]);
 
   function paintAtEvent(e) {
     const canvas = canvasRef.current;
@@ -927,8 +1393,89 @@ export default function App() {
     const el = ref.current;
     if (!el) return;
     el.src = url;
-    el.play().catch(() => {});
+    el.load();
     setTimeout(() => setModes((m) => ({ ...m, [id]: "file" })), 0);
+  }
+
+  // Sync-play: reset all loaded file layers to t=0 and start together
+  function syncPlayAll() {
+    const fileRefs = { B: audioRefB, C: audioRefC, D: audioRefD, F: audioRefF, G: audioRefG, H: audioRefH };
+    Object.entries(fileRefs).forEach(([id, ref]) => {
+      const el = ref.current;
+      if (!el || !el.src) return;
+      el.currentTime = 0;
+      el.play().catch(() => {});
+      setModes((m) => ({ ...m, [id]: "file" }));
+    });
+  }
+
+  // Pause all file layers
+  function pauseAll() {
+    const fileRefs = { B: audioRefB, C: audioRefC, D: audioRefD, F: audioRefF, G: audioRefG, H: audioRefH };
+    Object.values(fileRefs).forEach(({ current: el }) => { if (el) el.pause(); });
+  }
+
+  // Image guide helpers
+  async function handleImageGuide(file) {
+    if (!file) return;
+    const grid = await imageToGrid01(file, rows, cols, { threshold: imgThreshold, invert: imgInvert });
+    setImageGuide(symmetry ? mirrorVertical01(grid) : grid);
+    setImageMode("MASK");
+  }
+
+  // Overlay helpers
+  function initOverlayMask() {
+    const mc = document.createElement("canvas");
+    mc.width = cols; mc.height = rows;
+    overlayMaskRef.current = mc;
+  }
+
+  function handleOverlayFile(file) {
+    if (!file) return;
+    if (overlayMediaRef.current?._objUrl) URL.revokeObjectURL(overlayMediaRef.current._objUrl);
+    const url = URL.createObjectURL(file);
+    initOverlayMask();
+    if (file.type.startsWith("video/")) {
+      const vid = document.createElement("video");
+      vid._objUrl = url;
+      vid.src = url; vid.loop = true; vid.muted = true; vid.playsInline = true;
+      vid.addEventListener("canplay", () => { overlayMediaRef.current = vid; setOvType("video"); setOvVideoPlaying(false); }, { once: true });
+      vid.addEventListener("play",  () => setOvVideoPlaying(true));
+      vid.addEventListener("pause", () => setOvVideoPlaying(false));
+    } else {
+      const img = new Image();
+      img._objUrl = url;
+      img.src = url;
+      img.onload = () => { overlayMediaRef.current = img; setOvType("image"); };
+    }
+  }
+
+  function removeOverlay() {
+    if (overlayMediaRef.current?.pause) overlayMediaRef.current.pause();
+    if (overlayMediaRef.current?._objUrl) URL.revokeObjectURL(overlayMediaRef.current._objUrl);
+    overlayMediaRef.current = null; overlayMaskRef.current = null;
+    setOvType(null); setOvActiveTool("grid");
+  }
+
+  function ovPaintAt(clientX, clientY) {
+    const mc = overlayMaskRef.current;
+    const canvas = canvasRef.current;
+    if (!mc || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const cs = clamp(cell, 4, 30);
+    const gx = (clientX - rect.left) / cs;
+    const gy = (clientY - rect.top) / cs;
+    const br = ovParamRef.current.ovBrushSize;
+    const ctx = mc.getContext("2d");
+    if (ovParamRef.current.ovBrushMode === "erase") {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.fillStyle = "rgba(0,0,0,1)";
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = "rgba(255,255,255,1)";
+    }
+    ctx.beginPath(); ctx.arc(gx, gy, br, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
   }
 
   function startRecording() {
@@ -943,7 +1490,7 @@ export default function App() {
     const rawStreams = [];
     if (modes.A === "mic" && audioA.streamRef.current)
       rawStreams.push(audioA.streamRef.current);
-    [[audioRefB, "B"], [audioRefC, "C"], [audioRefD, "D"]].forEach(([ref, id]) => {
+    [[audioRefB, "B"], [audioRefC, "C"], [audioRefD, "D"], [audioRefF, "F"], [audioRefG, "G"], [audioRefH, "H"]].forEach(([ref, id]) => {
       if (modes[id] === "file" && ref.current?.captureStream) {
         try { rawStreams.push(ref.current.captureStream()); } catch {}
       }
@@ -992,9 +1539,9 @@ export default function App() {
     for (const L of LAYERS) e[L.id] = Math.round((audioMap[L.id]?.energy ?? 0) * 100);
     return e;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [LAYERS, audioMap, audioA.energy, audioB.energy, audioC.energy, audioD.energy]);
+  }, [LAYERS, audioMap, audioA.energy, audioB.energy, audioC.energy, audioD.energy, audioF.energy, audioG.energy, audioH.energy]);
 
-  const audioRefs = { B: audioRefB, C: audioRefC, D: audioRefD };
+  const audioRefs = { B: audioRefB, C: audioRefC, D: audioRefD, F: audioRefF, G: audioRefG, H: audioRefH };
 
   // shared style tokens
   const NG = "#39ff14";
@@ -1012,23 +1559,26 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#080808", padding: 16, fontFamily: "ui-monospace, 'Courier New', monospace", color: NG }}>
-      <div style={{ maxWidth: 1340, margin: "0 auto", display: "grid", gridTemplateColumns: "1.45fr 1fr", gap: 12 }}>
+      {/* hidden video element for video guide */}
+      <video ref={videoRef} style={{ display: "none" }} />
+
+      <div style={{ maxWidth: 1400, margin: "0 auto", display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 12 }}>
 
         {/* ── LEFT: Canvas ── */}
         <div style={{ ...panel, display: "flex", flexDirection: "column", gap: 10 }}>
+
+          {/* Header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
             <div>
-              <div style={{ fontWeight: 900, fontSize: 20, letterSpacing: 2, textShadow: `0 0 12px ${NG}` }}>
-                SOUND WEAVE
-              </div>
+              <div style={{ fontWeight: 900, fontSize: 20, letterSpacing: 2, textShadow: `0 0 12px ${NG}` }}>SOUND WEAVE</div>
               <div style={{ ...muted, marginTop: 3 }}>upload an image, add sound — the weave draws itself</div>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              {/* style mode — prominent toggle */}
+              {/* Pattern mode toggle — 4 modes */}
               <div style={{ display: "flex", background: "#0a0a0a", border: `1px solid ${ng20}`, borderRadius: 10, padding: 3, gap: 3 }}>
-                {["weave", "lace", "chart"].map((m) => (
+                {["weave", "lace", "chart", "stitch"].map((m) => (
                   <button key={m} onClick={() => setPatternMode(m)}
-                    style={{ padding: "5px 16px", borderRadius: 7, fontSize: 12, cursor: "pointer", fontWeight: 700, border: "none",
+                    style={{ padding: "5px 13px", borderRadius: 7, fontSize: 12, cursor: "pointer", fontWeight: 700, border: "none",
                       background: patternMode === m ? NG : "transparent",
                       color: patternMode === m ? "#000" : "rgba(57,255,20,0.5)",
                       boxShadow: patternMode === m ? `0 0 8px ${NG}` : "none",
@@ -1046,42 +1596,80 @@ export default function App() {
                 ? <button onClick={stopRecording}
                     style={{ ...btn(true), background: "#ff2222", borderColor: "#ff2222", color: "#fff", boxShadow: "0 0 10px #ff2222" }}>stop rec</button>
                 : <button onClick={startRecording}
-                    style={{ ...btn(true), boxShadow: `0 0 10px ${NG}` }}>record video</button>
+                    style={{ ...btn(false), boxShadow: `0 0 6px ${NG}` }}>record</button>
               }
             </div>
           </div>
 
-          <div style={{ border: `1px solid ${ng20}`, borderRadius: 10, overflow: "auto", boxShadow: `0 0 20px rgba(57,255,20,0.06)` }}>
+          {/* Canvas stack — main + overlay canvases */}
+          <div style={{ position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)` }}>
             <canvas
               ref={canvasRef}
-              onMouseDown={(e) => { setMouseDown(true); paintAtEvent(e); }}
-              onMouseMove={(e) => { if (mouseDown) paintAtEvent(e); }}
+              onMouseDown={(e) => { if (ovActiveTool === "grid") { setMouseDown(true); paintAtEvent(e); } }}
+              onMouseMove={(e) => { if (ovActiveTool === "grid" && mouseDown) paintAtEvent(e); }}
               onMouseUp={() => setMouseDown(false)}
               onMouseLeave={() => setMouseDown(false)}
-              style={{ display: "block", cursor: "crosshair" }}
+              style={{ display: "block", cursor: ovActiveTool === "grid" ? "crosshair" : "default" }}
+            />
+            {/* notation overlay — pointer-events none, always present */}
+            <canvas ref={notationCanvasRef}
+              style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
+            {/* brush/image overlay — receives mouse events only in brush mode */}
+            <canvas ref={overlayCanvasRef}
+              style={{ position: "absolute", top: 0, left: 0,
+                pointerEvents: ovActiveTool === "brush" && ovType ? "auto" : "none",
+                cursor: "crosshair" }}
+              onMouseDown={(e) => { ovIsPaintingRef.current = true; ovPaintAt(e.clientX, e.clientY); }}
+              onMouseMove={(e) => {
+                const rect = overlayCanvasRef.current?.getBoundingClientRect();
+                if (rect) ovMouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top, over: true };
+                if (ovIsPaintingRef.current) ovPaintAt(e.clientX, e.clientY);
+              }}
+              onMouseUp={() => { ovIsPaintingRef.current = false; }}
+              onMouseLeave={() => { ovIsPaintingRef.current = false; ovMouseRef.current = { ...ovMouseRef.current, over: false }; }}
+              onMouseEnter={() => { ovMouseRef.current = { ...ovMouseRef.current, over: true }; }}
             />
           </div>
 
+          {/* Score view — separate canvas below main canvas */}
+          {showScore && (
+            <div style={{ border: `1px solid ${ng20}`, borderRadius: 8, overflow: "hidden", lineHeight: 0 }}>
+              <canvas ref={scoreCanvasRef} style={{ display: "block" }} />
+            </div>
+          )}
+
+          {/* Below-canvas controls */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <button onClick={() => setDrawValue(1)} style={btn(drawValue === 1)}>paint mc</button>
-            <button onClick={() => setDrawValue(0)} style={btn(drawValue === 0)}>paint cc</button>
+            <span style={muted}>draw:</span>
+            <button onClick={() => { setOvActiveTool("grid"); setDrawValue(1); }}
+              style={btn(ovActiveTool === "grid" && drawValue === 1)}>mc</button>
+            <button onClick={() => { setOvActiveTool("grid"); setDrawValue(0); }}
+              style={btn(ovActiveTool === "grid" && drawValue === 0)}>cc</button>
+            {ovType && (
+              <button onClick={() => setOvActiveTool(ovActiveTool === "brush" ? "grid" : "brush")}
+                style={{ ...btn(ovActiveTool === "brush"), borderColor: ovActiveTool === "brush" ? NG : "#ff66cc", color: ovActiveTool === "brush" ? "#000" : "#ff66cc" }}>
+                brush {ovActiveTool === "brush" ? "on" : "off"}
+              </button>
+            )}
+            <div style={{ width: 1, height: 20, background: ng20 }} />
             <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, cursor: "pointer" }}>
               <input type="checkbox" checked={symmetry} onChange={(e) => setSymmetry(e.target.checked)} />
-              symmetry ↔
+              symmetry
             </label>
-            <span style={{ ...muted }}>combine:</span>
+            <div style={{ width: 1, height: 20, background: ng20 }} />
+            <span style={muted}>layers:</span>
             {["OR", "XOR", "AND"].map((m) => (
               <button key={m} onClick={() => setCombineMode(m)} style={btn(combineMode === m)}>{m}</button>
             ))}
           </div>
 
-          {/* energy meters */}
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          {/* Energy meters */}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <span style={muted}>energy</span>
             {LAYERS.map((L) => (
-              <span key={L.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              <span key={L.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
                 <span style={{ color: LAYER_COLORS[L.id], fontWeight: 700 }}>{L.id}</span>
-                <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.6), height: 6, background: LAYER_COLORS[L.id], borderRadius: 3, boxShadow: `0 0 4px ${LAYER_COLORS[L.id]}`, transition: "width 0.1s" }} />
+                <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: LAYER_COLORS[L.id], borderRadius: 3, boxShadow: `0 0 4px ${LAYER_COLORS[L.id]}`, transition: "width 0.1s" }} />
                 <span style={muted}>{energyAll[L.id]}%</span>
               </span>
             ))}
@@ -1091,72 +1679,241 @@ export default function App() {
         {/* ── RIGHT: Controls ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 
-          {/* background + mask images */}
+          {/* ▶ Sound layers */}
+          <div style={panel}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: 1 }}>sound layers</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={syncPlayAll}
+                  style={{ ...btn(false), fontSize: 11, borderColor: "#00c878", color: "#00c878" }}>sync play all</button>
+                <button onClick={pauseAll}
+                  style={{ ...btn(false), fontSize: 11 }}>pause all</button>
+              </div>
+            </div>
+            {LAYERS.map((L) => (
+              <div key={L.id} style={{ border: `1px solid ${ng20}`, borderRadius: 9, padding: 9, marginBottom: 8 }}>
+                {/* Layer header */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <b style={{ color: LAYER_COLORS[L.id], fontSize: 14, letterSpacing: 1 }}>{L.id}</b>
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{L.name}</span>
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: LAYER_COLORS[L.id], borderRadius: 3, transition: "width 0.1s" }} />
+                    <span style={muted}>{energyAll[L.id]}%</span>
+                  </span>
+                </div>
+                {/* on/off toggle */}
+                <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
+                  {(L.type === "mic" ? ["off", "mic"] : ["off", "file"]).map((m) => (
+                    <button key={m} onClick={() => setModes((s) => ({ ...s, [L.id]: m }))} style={btn(modes[L.id] === m)}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                {/* file input + audio player */}
+                {L.type === "file" && (
+                  <div style={{ marginBottom: 6 }}>
+                    <input type="file" accept="audio/*"
+                      onChange={(e) => filePickerToAudio(audioRefs[L.id], e.target.files?.[0], L.id)}
+                      style={{ fontSize: 11 }} />
+                    <audio ref={audioRefs[L.id]} controls style={{ width: "100%", marginTop: 4, height: 28 }} />
+                  </div>
+                )}
+                {/* speed / threshold / mix alpha */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                  <label style={label12}>speed
+                    <input type="range" min={1} max={30} value={speeds[L.id]}
+                      onChange={(e) => setSpeeds((s) => ({ ...s, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
+                    <span style={muted}>{speeds[L.id]}r/s</span>
+                  </label>
+                  <label style={label12}>threshold
+                    <input type="range" min={0} max={1} step={0.01} value={thresholds[L.id]}
+                      onChange={(e) => setThresholds((t) => ({ ...t, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
+                    <span style={muted}>{Math.round(thresholds[L.id] * 100)}%</span>
+                  </label>
+                  <label style={label12}>mix
+                    <input type="range" min={0} max={1} step={0.01} value={alphas[L.id]}
+                      onChange={(e) => setAlphas((a) => ({ ...a, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
+                    <span style={muted}>{Math.round(alphas[L.id] * 100)}%</span>
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Background image */}
           <div style={panel}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, letterSpacing: 1 }}>background image</div>
             <input type="file" accept="image/*" onChange={(e) => handleBgImage(e.target.files?.[0])} />
-            {bgImg && (
-              <button onClick={() => setBgImg(null)} style={{ ...btn(false), marginTop: 8, fontSize: 11 }}>remove image</button>
-            )}
-            <label style={{ ...label12, marginTop: 10 }}>
-              gap brightness
+            {bgImg && <button onClick={() => setBgImg(null)} style={{ ...btn(false), marginTop: 6, fontSize: 11 }}>remove</button>}
+            <label style={{ ...label12, marginTop: 10 }}>gap brightness
               <input type="range" min={0} max={1} step={0.01} value={imageOpacity}
-                onChange={(e) => setImageOpacity(Number(e.target.value))} style={{ marginTop: 5 }} />
+                onChange={(e) => setImageOpacity(Number(e.target.value))} style={{ marginTop: 4 }} />
               <span style={muted}>{Math.round(imageOpacity * 100)}%</span>
             </label>
-
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid #1e1e1e` }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, letterSpacing: 1 }}>audio mask image</div>
-              <div style={{ ...muted, fontSize: 11, marginBottom: 8 }}>revealed only where sound is active — animates with the audio</div>
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid #1e1e1e` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, letterSpacing: 1 }}>audio mask image</div>
+              <div style={{ ...muted, fontSize: 11, marginBottom: 6 }}>revealed only on audio-active stitches</div>
               <input type="file" accept="image/*" onChange={(e) => handleMaskImage(e.target.files?.[0])} />
-              {maskImg && (
-                <button onClick={() => setMaskImg(null)} style={{ ...btn(false), marginTop: 8, fontSize: 11 }}>remove mask</button>
-              )}
+              {maskImg && <button onClick={() => setMaskImg(null)} style={{ ...btn(false), marginTop: 6, fontSize: 11 }}>remove</button>}
             </div>
           </div>
 
-          {/* pattern style */}
+          {/* Image guide — gates stitches by image/video */}
+          <div style={panel}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, letterSpacing: 1 }}>image guide</div>
+            <div style={{ ...muted, fontSize: 11, marginBottom: 8 }}>gates which stitches the audio can fill</div>
+            {/* Mode selector */}
+            <div style={{ display: "flex", gap: 5, marginBottom: 6, flexWrap: "wrap" }}>
+              {["OFF", "MASK", "CARVE", "BIAS"].map((m) => (
+                <button key={m} onClick={() => setImageMode(m)} style={btn(imageMode === m)}>{m}</button>
+              ))}
+            </div>
+            <div style={{ ...muted, fontSize: 11, marginBottom: 8 }}>
+              {imageMode === "OFF"   && "no gating — all stitches free"}
+              {imageMode === "MASK"  && "MASK — audio fills only where guide = 1"}
+              {imageMode === "CARVE" && "CARVE — audio fills only where guide = 0"}
+              {imageMode === "BIAS"  && "BIAS — guide lowers threshold, more fill where bright"}
+            </div>
+            <input type="file" accept="image/*,video/*" onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              if (f.type.startsWith("video/")) {
+                const vid = videoRef.current;
+                if (vid) { vid.src = URL.createObjectURL(f); vid.loop = true; vid.muted = true; vid.play().catch(() => {}); setVideoGuideActive(true); }
+              } else {
+                setVideoGuideActive(false);
+                handleImageGuide(f);
+              }
+            }} />
+            {videoGuideActive && <div style={{ ...muted, fontSize: 11, marginTop: 4 }}>video guide active — sampling frames</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+              <label style={label12}>threshold
+                <input type="range" min={0} max={1} step={0.01} value={imgThreshold}
+                  onChange={(e) => setImgThreshold(Number(e.target.value))} style={{ marginTop: 4 }} />
+                <span style={muted}>{Math.round(imgThreshold * 100)}%</span>
+              </label>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, cursor: "pointer", paddingTop: 14 }}>
+                <input type="checkbox" checked={imgInvert} onChange={(e) => setImgInvert(e.target.checked)} />
+                invert guide
+              </label>
+            </div>
+            <button onClick={() => { setVideoGuideActive(false); setImageGuide(makeGrid(rows, cols, 0)); setImageMode("OFF"); }}
+              style={{ ...btn(false), marginTop: 8, fontSize: 11 }}>clear guide</button>
+          </div>
+
+          {/* Overlay brush — paint image/video through brush mask */}
+          <div style={panel}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, letterSpacing: 1 }}>overlay brush</div>
+            <div style={{ ...muted, fontSize: 11, marginBottom: 8 }}>paint an image or video to reveal through a drawn mask</div>
+            <input type="file" accept="image/*,video/*" onChange={(e) => handleOverlayFile(e.target.files?.[0])} />
+            {ovType && (
+              <>
+                <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => setOvActiveTool("grid")} style={btn(ovActiveTool === "grid")}>grid mode</button>
+                  <button onClick={() => setOvActiveTool("brush")}
+                    style={{ ...btn(ovActiveTool === "brush"), borderColor: ovActiveTool === "brush" ? NG : "#ff66cc", color: ovActiveTool === "brush" ? "#000" : "#ff66cc" }}>
+                    brush mode
+                  </button>
+                  <button onClick={removeOverlay} style={{ ...btn(false), borderColor: "#ff4444", color: "#ff4444" }}>remove</button>
+                </div>
+                {ovActiveTool === "brush" && (
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <button onClick={() => setOvBrushMode("reveal")} style={btn(ovBrushMode === "reveal")}>reveal</button>
+                    <button onClick={() => setOvBrushMode("erase")}
+                      style={{ ...btn(ovBrushMode === "erase"), borderColor: "#ff4444", color: ovBrushMode === "erase" ? "#000" : "#ff4444", background: ovBrushMode === "erase" ? "#ff4444" : "transparent" }}>
+                      erase
+                    </button>
+                  </div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                  <label style={label12}>brush size
+                    <input type="range" min={1} max={20} value={ovBrushSize}
+                      onChange={(e) => setOvBrushSize(Number(e.target.value))} style={{ marginTop: 4 }} />
+                    <span style={muted}>{ovBrushSize} cells</span>
+                  </label>
+                  <label style={label12}>opacity
+                    <input type="range" min={0} max={1} step={0.01} value={ovOpacity}
+                      onChange={(e) => setOvOpacity(Number(e.target.value))} style={{ marginTop: 4 }} />
+                    <span style={muted}>{Math.round(ovOpacity * 100)}%</span>
+                  </label>
+                </div>
+                <label style={{ ...label12, marginTop: 6 }}>blend mode
+                  <select value={ovBlend} onChange={(e) => setOvBlend(e.target.value)}
+                    style={{ marginTop: 4, background: "#1a1a1a", color: NG, border: `1px solid ${ng20}`, borderRadius: 6, padding: "3px 8px", fontSize: 12, display: "block" }}>
+                    {["multiply", "screen", "overlay", "soft-light", "hard-light", "difference", "exclusion", "normal"].map((b) => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
+                </label>
+                <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => { const mc = overlayMaskRef.current; if (mc) { const ctx = mc.getContext("2d"); ctx.clearRect(0, 0, mc.width, mc.height); } }}
+                    style={btn(false)}>clear mask</button>
+                  <button onClick={() => { const mc = overlayMaskRef.current; if (mc) { const ctx = mc.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, mc.width, mc.height); } }}
+                    style={btn(false)}>fill mask</button>
+                  {ovType === "video" && (
+                    <button onClick={() => { const me = overlayMediaRef.current; if (!me) return; ovVideoPlaying ? me.pause() : me.play().catch(() => {}); }}
+                      style={btn(false)}>{ovVideoPlaying ? "pause video" : "play video"}</button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Style */}
           <div style={panel}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, letterSpacing: 1 }}>style — {patternMode}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
-              <label style={label12}>
-                warp color
+              <label style={label12}>mc color
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
                   <input type="color" value={warpColor} onChange={(e) => setWarpColor(e.target.value)} style={colorPick} />
                   <span style={muted}>{warpColor}</span>
                 </div>
               </label>
-              <label style={label12}>
-                weft color
+              <label style={label12}>cc color
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
                   <input type="color" value={cc} onChange={(e) => setCc(e.target.value)} style={colorPick} />
                   <span style={muted}>{cc}</span>
                 </div>
               </label>
             </div>
-            <div style={{ ...muted, marginBottom: 10, fontSize: 11 }}>
-              audio layers: {LAYERS.map(L => <span key={L.id} style={{ marginRight: 6, color: L.color.replace(/,\s*[\d.]+\)/, ",1)") }}>{L.id} ●</span>)}
-            </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {[
-                ["color opacity", colorAlpha, 0, 1, 0.01, (v) => setColorAlpha(v), `${Math.round(colorAlpha*100)}%`],
-                ["weft opacity", ccAlpha, 0, 1, 0.01, (v) => setCcAlpha(v), `${Math.round(ccAlpha*100)}%`],
+                ["color α", colorAlpha, 0, 1, 0.01, (v) => setColorAlpha(v), `${Math.round(colorAlpha * 100)}%`],
+                ["weft α", ccAlpha, 0, 1, 0.01, (v) => setCcAlpha(v), `${Math.round(ccAlpha * 100)}%`],
                 ["corner radius", borderRadius, 0, 50, 1, (v) => setBorderRadius(v), `${borderRadius}%`],
-                ["size variation", sizeVariation, 0, 1, 0.01, (v) => setSizeVariation(v), `${Math.round(sizeVariation*100)}%`],
+                ["size variation", sizeVariation, 0, 1, 0.01, (v) => setSizeVariation(v), `${Math.round(sizeVariation * 100)}%`],
                 ["posterize", posterizeLevels, 2, 16, 1, (v) => setPosterizeLevels(v), `${posterizeLevels} lvl`],
-                ["weave gap", gap, 0, 4, 1, (v) => setGap(v), `${gap}px`],
-              ].map(([name, val, min, max, step, set, label]) => (
+                ["gap", gap, 0, 4, 1, (v) => setGap(v), `${gap}px`],
+              ].map(([name, val, min, max, step, set, lbl]) => (
                 <label key={name} style={label12}>
                   {name}
                   <input type="range" min={min} max={max} step={step} value={val}
                     onChange={(e) => set(Number(e.target.value))} style={{ marginTop: 4 }} />
-                  <span style={muted}>{label}</span>
+                  <span style={muted}>{lbl}</span>
                 </label>
               ))}
             </div>
+            {patternMode === "stitch" && (
+              <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, cursor: "pointer", marginTop: 10 }}>
+                <input type="checkbox" checked={stitchInvert} onChange={(e) => setStitchInvert(e.target.checked)} />
+                invert stitch fill
+              </label>
+            )}
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid #1e1e1e`, display: "flex", gap: 16, flexWrap: "wrap" }}>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, cursor: "pointer" }}>
+                <input type="checkbox" checked={showNotation} onChange={(e) => setShowNotation(e.target.checked)} />
+                notation overlay
+              </label>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, cursor: "pointer" }}>
+                <input type="checkbox" checked={showScore} onChange={(e) => setShowScore(e.target.checked)} />
+                score view
+              </label>
+            </div>
           </div>
 
-          {/* ⊞ Grid */}
+          {/* Grid size */}
           <div style={panel}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, letterSpacing: 1 }}>grid size</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -1169,52 +1926,13 @@ export default function App() {
                   onChange={(e) => setRows(clamp(Number(e.target.value) || 80, 20, 320))} style={{ marginTop: 4 }} />
               </label>
             </div>
-            <label style={{ ...label12, marginTop: 8 }}>
-              cell size
+            <label style={{ ...label12, marginTop: 8 }}>cell size
               <input type="range" min={4} max={24} value={cell} onChange={(e) => setCell(Number(e.target.value))} style={{ marginTop: 4 }} />
               <span style={muted}>{cell}px</span>
             </label>
           </div>
 
-          {/* 🎵 Sound Inputs */}
-          <div style={panel}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, letterSpacing: 1 }}>sound inputs</div>
-            {LAYERS.map((L) => (
-              <div key={L.id} style={{ border: `1px solid ${ng20}`, borderRadius: 9, padding: 9, marginBottom: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <b style={{ color: LAYER_COLORS[L.id], fontSize: 12, letterSpacing: 1 }}>{L.id} — {L.name}</b>
-                  <span style={muted}>{energyAll[L.id]}%</span>
-                </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {(L.type === "mic" ? ["off","mic"] : L.type === "file" ? ["off","file"] : ["off","osc"]).map((m) => (
-                    <button key={m} onClick={() => setModes((s) => ({ ...s, [L.id]: m }))} style={btn(modes[L.id] === m)}>
-                      {m}
-                    </button>
-                  ))}
-                </div>
-                {L.type === "file" && (
-                  <div style={{ marginTop: 8 }}>
-                    <input type="file" accept="audio/*" onChange={(e) => filePickerToAudio(audioRefs[L.id], e.target.files?.[0], L.id)} />
-                    <audio ref={audioRefs[L.id]} controls />
-                  </div>
-                )}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-                  <label style={label12}>speed
-                    <input type="range" min={1} max={30} value={speeds[L.id]}
-                      onChange={(e) => setSpeeds((s) => ({ ...s, [L.id]: Number(e.target.value) }))} style={{ marginTop: 4 }} />
-                    <span style={muted}>{speeds[L.id]} r/s</span>
-                  </label>
-                  <label style={label12}>threshold
-                    <input type="range" min={0} max={1} step={0.01} value={thresholds[L.id]}
-                      onChange={(e) => setThresholds((t) => ({ ...t, [L.id]: Number(e.target.value) }))} style={{ marginTop: 4 }} />
-                    <span style={muted}>{Math.round(thresholds[L.id]*100)}%</span>
-                  </label>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* 🧵 Knitting Instructions */}
+          {/* Knitting instructions */}
           <div style={panel}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, letterSpacing: 1 }}>knitting instructions</div>
             <label style={label12}>float warning (run length)
@@ -1235,7 +1953,7 @@ export default function App() {
             <div style={{ ...muted, marginTop: 6, fontSize: 11 }}>showing 40 of {knit.rowsText.length} rows</div>
             <button onClick={downloadPattern}
               style={{ ...btn(true), marginTop: 8, width: "100%", boxShadow: `0 0 8px ${NG}` }}>
-              download full pattern ({knit.rowsText.length} rows)
+              download pattern ({knit.rowsText.length} rows)
             </button>
           </div>
 
