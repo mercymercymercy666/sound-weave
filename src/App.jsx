@@ -2594,63 +2594,45 @@ function addClip(id,dataUrl,mediaType){
             )}
           </div>
 
-          {/* Perform clips — Winamp-style 2000s UI */}
-          <div style={{ ...panel, background: "#fff", border: "2px solid #b0b8e8", borderRadius: 10, padding: 0, overflow: "hidden" }}>
-            {/* Title bar */}
-            <div style={{ background: "linear-gradient(90deg, #7ba7e0 0%, #c3b1e1 50%, #f9a8d4 100%)", padding: "5px 10px", display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ display: "flex", gap: 3 }}>
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#ff6b6b", border: "1px solid #cc4444" }} />
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#ffd166", border: "1px solid #ccaa00" }} />
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#88d8b0", border: "1px solid #44aa77" }} />
-              </div>
-              <span style={{ fontFamily: "'Trebuchet MS', Arial, sans-serif", fontSize: 11, fontWeight: 700, color: "#3a2a6e", letterSpacing: 1, textShadow: "0 1px 0 rgba(255,255,255,0.6)" }}>PERFORM CLIPS</span>
-            </div>
-            <div style={{ padding: "10px 10px 8px" }}>
-              <label style={{ display: "block", marginBottom: 8 }}>
-                <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif",
-                  background: "linear-gradient(135deg, #c3b1e1, #f9a8d4)", border: "1px solid #b0b8e8", color: "#3a2a6e", boxShadow: "0 2px 4px rgba(100,80,200,0.2), inset 0 1px 0 rgba(255,255,255,0.7)" }}>
-                  + add image / video
-                </span>
-                <input type="file" accept="image/*,video/*" style={{ display: "none" }}
-                  onChange={e => { if (e.target.files[0]) { addClip(e.target.files[0]); e.target.value = ""; } }} />
-              </label>
-              {/* Open clip windows */}
-              {(() => { const openWins = clipWindowsRef.current.filter(w => !w.win.closed); return openWins.length > 0 && (
-                <div style={{ marginBottom: 8, padding: "4px 8px", background: "#eef2ff", borderRadius: 6, border: "1px solid #b0b8e8" }}>
-                  <div style={{ fontSize: 10, color: "#6655aa", marginBottom: 4, fontWeight: 700, fontFamily: "'Trebuchet MS', Arial, sans-serif", letterSpacing: 0.5 }}>open windows</div>
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                    {clipWindowsRef.current.filter(w => !w.win.closed).map(w => (
-                      <span key={w.winId} style={{ fontSize: 10, color: "#6655aa", background: "#d4c8f5", borderRadius: 3, padding: "1px 7px", border: "1px solid #b0a0e0", fontFamily: "'Trebuchet MS', Arial, sans-serif" }}>{w.label}</span>
-                    ))}
-                    <button onClick={() => { closeAllClipWindows(); }}
-                      style={{ fontSize: 10, padding: "1px 7px", background: "#ffd6d6", border: "1px solid #ffaaaa", borderRadius: 3, color: "#cc2222", cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif" }}>close all</button>
-                  </div>
+          {/* Perform clips */}
+          <div style={panel}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, letterSpacing: 1, color: "#cc99ff" }}>perform clips</div>
+            <label style={{ ...label12, display: "block", marginBottom: 8 }}>
+              <span style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", cursor: "pointer", display: "inline-block" }}>+ add image / video</span>
+              <input type="file" accept="image/*,video/*" style={{ display: "none" }}
+                onChange={e => { if (e.target.files[0]) { addClip(e.target.files[0]); e.target.value = ""; } }} />
+            </label>
+            {(() => { const openWins = clipWindowsRef.current.filter(w => !w.win.closed); return openWins.length > 0 && (
+              <div style={{ marginBottom: 8, padding: "4px 6px", background: "rgba(255,102,204,0.06)", borderRadius: 5, border: "1px solid rgba(255,102,204,0.15)" }}>
+                <div style={{ fontSize: 10, color: "#ff99dd", marginBottom: 4, letterSpacing: 1 }}>open windows</div>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  {openWins.map(w => (
+                    <span key={w.winId} style={{ fontSize: 10, color: "#ff99dd", background: "rgba(255,102,204,0.12)", borderRadius: 3, padding: "1px 6px", border: "1px solid rgba(255,102,204,0.3)" }}>{w.label}</span>
+                  ))}
+                  <button onClick={() => { closeAllClipWindows(); }} style={{ ...btn(false), fontSize: 10, padding: "1px 6px", color: "#ff6666", borderColor: "#ff444466" }}>close all</button>
                 </div>
-              ); })()}
-              {clips.length === 0 && <div style={{ fontSize: 11, color: "#aaa", fontStyle: "italic", fontFamily: "'Trebuchet MS', Arial, sans-serif", textAlign: "center", padding: "8px 0" }}>drop images or videos here</div>}
-              {clips.map(c => {
-                const openWins = clipWindowsRef.current.filter(w => !w.win.closed);
-                return (
-                  <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4, background: "#f0f4ff", borderRadius: 6, padding: "4px 6px", border: "1px solid #d0d8f8", flexWrap: "wrap" }}>
-                    {c.type === "image"
-                      ? <img src={c.blobUrl} style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 3, border: "1px solid #c0caee", flexShrink: 0 }} />
-                      : <div style={{ width: 28, height: 28, background: "#e0d8f8", borderRadius: 3, border: "1px solid #c0caee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#7060c0", flexShrink: 0 }}>▶</div>
-                    }
-                    <span style={{ flex: 1, fontSize: 10, color: "#444", fontFamily: "'Trebuchet MS', Arial, sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{c.name}</span>
-                    <button onClick={() => openClipWindow(c)}
-                      style={{ fontSize: 10, padding: "2px 6px", background: "#d4f5e9", border: "1px solid #88ccaa", borderRadius: 3, color: "#226644", cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif" }} title="open in new popup">↗</button>
-                    {openWins.map(w => (
-                      <button key={w.winId} onClick={() => sendToClipWindow(w.winId, c)}
-                        style={{ fontSize: 9, padding: "2px 5px", background: "#fde8f8", border: "1px solid #e0aadd", borderRadius: 3, color: "#882277", cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif" }} title={`send to ${w.label}`}>{w.label}</button>
-                    ))}
-                    <button onClick={() => { if (performWinRef.current && !performWinRef.current.closed) performWinRef.current.postMessage({ type: "addClip", id: c.id + Date.now(), dataUrl: c.blobUrl, mediaType: c.type }, "*"); }}
-                      style={{ fontSize: 10, padding: "2px 6px", background: "#e8d8f8", border: "1px solid #c0a0e8", borderRadius: 3, color: "#6633aa", cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif" }} title="send to perform">⬡</button>
-                    <button onClick={() => removeClip(c.id)}
-                      style={{ fontSize: 10, padding: "2px 6px", background: "#ffd6d6", border: "1px solid #ffaaaa", borderRadius: 3, color: "#cc2222", cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif" }}>×</button>
-                  </div>
-                );
-              })}
-            </div>
+              </div>
+            ); })()}
+            {clips.length === 0 && <div style={{ fontSize: 11, color: "rgba(200,169,110,0.4)", fontStyle: "italic" }}>upload images or videos</div>}
+            {clips.map(c => {
+              const openWins = clipWindowsRef.current.filter(w => !w.win.closed);
+              return (
+                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4, background: "rgba(153,51,255,0.08)", borderRadius: 5, padding: "4px 6px", flexWrap: "wrap" }}>
+                  {c.type === "image"
+                    ? <img src={c.blobUrl} style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)", flexShrink: 0 }} />
+                    : <div style={{ width: 28, height: 28, background: "#1a0033", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>▶</div>
+                  }
+                  <span style={{ flex: 1, fontSize: 10, color: "#cc99ff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{c.name}</span>
+                  <button onClick={() => openClipWindow(c)} style={{ ...btn(false), borderColor: "#ff66cc", color: "#ff99dd", padding: "2px 5px", fontSize: 10 }} title="open in new popup">↗</button>
+                  {openWins.map(w => (
+                    <button key={w.winId} onClick={() => sendToClipWindow(w.winId, c)} style={{ ...btn(false), borderColor: "#ff66cc", color: "#ff99dd", padding: "2px 5px", fontSize: 9 }} title={`send to ${w.label}`}>{w.label}</button>
+                  ))}
+                  <button onClick={() => { if (performWinRef.current && !performWinRef.current.closed) performWinRef.current.postMessage({ type: "addClip", id: c.id + Date.now(), dataUrl: c.blobUrl, mediaType: c.type }, "*"); }}
+                    style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", padding: "2px 5px", fontSize: 10 }} title="send to perform">⬡</button>
+                  <button onClick={() => removeClip(c.id)} style={{ ...btn(false), padding: "2px 5px", fontSize: 10, color: "#ff6666", borderColor: "#ff444466" }}>×</button>
+                </div>
+              );
+            })}
           </div>
 
           {/* Style */}
