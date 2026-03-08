@@ -2118,8 +2118,6 @@ function addClip(id,dataUrl,mediaType){
   const [notationSeed, setNotationSeed] = useState(42);
   const [posterCell, setPosterCell] = useState(5);
   const [fabricInvert, setFabricInvert] = useState(false);
-  const [posterInvert, setPosterInvert] = useState(false);
-  const posterInvertRef = useRef(false); posterInvertRef.current = posterInvert;
   const [posterActiveTool, setPosterActiveTool] = useState("select");
   const [posterCursor, setPosterCursor] = useState("default");
   const [posterBrushSize, setPosterBrushSize] = useState(6);
@@ -2148,7 +2146,7 @@ function addClip(id,dataUrl,mediaType){
       overlayType: posterOvType, overlayOpacity: posterOvOpacity, overlayBlend: posterOvBlend,
       dirty: true,
     };
-  }, [posterTexts, posterSelectedId, posterCell, staveCount, notationSeed, fabricInvert, posterInvert,
+  }, [posterTexts, posterSelectedId, posterCell, staveCount, notationSeed, fabricInvert,
       posterActiveTool, posterBrushSize, posterBrushMode, posterOvType, posterOvOpacity, posterOvBlend]);
 
   // Poster RAF loop
@@ -2188,7 +2186,7 @@ function addClip(id,dataUrl,mediaType){
           fm.getContext("2d").fillRect(0, 0, fm.width, fm.height);
           drawMediaOverlay(c, overlayMediaRef.current, fm, eo, eb);
         }
-        if (posterInvertRef.current) {
+        if (editInvertRef.current) {
           const ctx = c.getContext("2d");
           ctx.globalCompositeOperation = "difference";
           ctx.fillStyle = "#ffffff";
@@ -2857,10 +2855,6 @@ function addClip(id,dataUrl,mediaType){
                 <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11, color: "#c8a96e", cursor: "pointer", paddingTop: 14 }}>
                   <input type="checkbox" checked={fabricInvert} onChange={(e) => setFabricInvert(e.target.checked)} />
                   dark mode
-                </label>
-                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11, color: "#c8a96e", cursor: "pointer", paddingTop: 14 }}>
-                  <input type="checkbox" checked={posterInvert} onChange={(e) => setPosterInvert(e.target.checked)} />
-                  invert
                 </label>
               </div>
             </div>
