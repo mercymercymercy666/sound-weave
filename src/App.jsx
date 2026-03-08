@@ -1362,6 +1362,14 @@ export default function App() {
   const [performOpen, setPerformOpen] = useState(false);
   const performWinRef = useRef(null);
   const [clips, setClips] = useState([]);
+  const [clipStyles, setClipStyles] = useState({}); // id -> style name
+  const CLIP_STYLES = {
+    normal:   { opacity: 1,    mix: "normal" },
+    multiply: { opacity: 1,    mix: "multiply" },
+    screen:   { opacity: 1,    mix: "screen" },
+    overlay:  { opacity: 1,    mix: "overlay" },
+    ghost:    { opacity: 0.35, mix: "normal" },
+  };
   const clipNextIdRef = useRef(0);
   const clipWindowsRef = useRef([]); // { winId, label, win }
   const [clipWinTick, setClipWinTick] = useState(0); // triggers re-render when windows open/close
@@ -1682,6 +1690,12 @@ export default function App() {
 
   useEffect(() => { editInvertRef.current = editInvert; }, [editInvert]);
 
+  // Sync perform window background with editInvert
+  useEffect(() => {
+    const pw = performWinRef.current;
+    if (pw && !pw.closed) pw.postMessage({ type: "setBg", color: editInvert ? "#ffffff" : "#000000" }, "*");
+  }, [editInvert, performOpen]);
+
   // Brush undo — Ctrl+Z restores last mask snapshot
   useEffect(() => {
     const handler = (e) => {
@@ -1976,6 +1990,7 @@ body{background:#000;overflow:hidden;width:100vw;height:100vh}
 <div id="clips"></div>
 <div id="fs" onclick="goFS()">⛶ fullscreen</div>
 <script>
+var clipNum=0;
 function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();var o=document.getElementById('fs');if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}}
 document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F')goFS();});
 window.addEventListener('message',function(e){
@@ -1984,6 +1999,7 @@ window.addEventListener('message',function(e){
   else if(e.data.type==='addClip')addClip(e.data.id,e.data.dataUrl,e.data.mediaType);
   else if(e.data.type==='removeClip'){var el=document.getElementById('clip-'+e.data.id);if(el)el.remove();}
   else if(e.data.type==='updateClip'){var el=document.getElementById('clip-'+e.data.id);if(el){if(e.data.opacity!=null)el.style.opacity=e.data.opacity;if(e.data.mix!=null)el.style.mixBlendMode=e.data.mix;}}
+  else if(e.data.type==='setBg'){document.body.style.background=e.data.color;}
 });
 function makeDraggable(div,resize){
   var dragging=false,rx=0,ry=0,rl=0,rt=0;
@@ -2000,7 +2016,7 @@ function addClip(id,dataUrl,mediaType){
   var div=document.createElement('div');div.id='clip-'+id;div.className='clip';
   div.style.cssText='left:80px;top:80px;width:280px;height:280px;';
   var bar=document.createElement('div');bar.className='clip-bar';
-  var name=document.createElement('span');name.className='clip-name';name.textContent=mediaType+' clip';bar.appendChild(name);
+  var name=document.createElement('span');name.className='clip-name';name.textContent='clip '+( ++clipNum );bar.appendChild(name);
   var closeBtn=document.createElement('button');closeBtn.className='clip-btn';closeBtn.textContent='×';closeBtn.onclick=function(){div.remove();};bar.appendChild(closeBtn);
   div.appendChild(bar);
   var inner;
@@ -2645,6 +2661,19 @@ function addClip(id,dataUrl,mediaType){
                   ))}
                   <button onClick={() => { if (performWinRef.current && !performWinRef.current.closed) performWinRef.current.postMessage({ type: "addClip", id: c.id + Date.now(), dataUrl: c.blobUrl, mediaType: c.type }, "*"); }}
                     style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", padding: "2px 5px", fontSize: 10 }} title="send to perform">⬡</button>
+                  <select
+                    value={clipStyles[c.id] ?? "normal"}
+                    onChange={e => {
+                      const s = e.target.value;
+                      setClipStyles(prev => ({ ...prev, [c.id]: s }));
+                      const preset = CLIP_STYLES[s];
+                      if (performWinRef.current && !performWinRef.current.closed)
+                        performWinRef.current.postMessage({ type: "updateClip", id: c.id, opacity: preset.opacity, mix: preset.mix }, "*");
+                    }}
+                    style={{ background: "#1a0033", color: "#cc99ff", border: "1px solid rgba(153,51,255,0.4)", borderRadius: 3, fontSize: 9, padding: "1px 2px", cursor: "pointer" }}
+                  >
+                    {Object.keys(CLIP_STYLES).map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
                   <button onClick={() => removeClip(c.id)} style={{ ...btn(false), padding: "2px 5px", fontSize: 10, color: "#ff6666", borderColor: "#ff444466" }}>×</button>
                 </div>
               );
