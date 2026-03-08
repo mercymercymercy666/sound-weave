@@ -1385,6 +1385,7 @@ export default function App() {
   };
   const BLEND_MODES = ["normal","multiply","screen","overlay","soft-light","difference","luminosity"];
   const clipNextIdRef = useRef(0);
+  const clipPerformIds = useRef({}); // localClipId -> last perform-window element id
 
   const [grids, setGrids] = useState(() => {
     const o = {};
@@ -2013,8 +2014,6 @@ function makeDraggable(div,resize){
   window.addEventListener('mouseup',function(){resizing=false;});
 }
 function addClip(id,dataUrl,mediaType,filter,mix){
-  var existing=document.getElementById('clip-'+id);
-  if(existing){var inn=existing.querySelector('img,video');if(inn&&filter)inn.style.filter=filter;if(mix&&mix!=='normal')existing.style.mixBlendMode=mix;else existing.style.mixBlendMode='';return;}
   var clips=document.getElementById('clips');
   var div=document.createElement('div');div.id='clip-'+id;div.className='clip';
   div.style.cssText='left:80px;top:80px;width:280px;height:280px;';
@@ -2065,7 +2064,9 @@ function addClip(id,dataUrl,mediaType,filter,mix){
     if (!performWinRef.current || performWinRef.current.closed) return;
     const filter = CLIP_STYLES[clipStyles[clip.id] ?? "warm"] ?? WARM;
     const mix = clipBlends[clip.id] ?? "normal";
-    performWinRef.current.postMessage({ type: "addClip", id: clip.id, dataUrl: clip.blobUrl, mediaType: clip.type, filter, mix }, "*");
+    const pid = clip.id + "_" + Date.now();
+    clipPerformIds.current[clip.id] = pid;
+    performWinRef.current.postMessage({ type: "addClip", id: pid, dataUrl: clip.blobUrl, mediaType: clip.type, filter, mix }, "*");
   }
 
   const energyAll = useMemo(() => {
@@ -2617,8 +2618,9 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                   onChange={e => {
                     const s = e.target.value;
                     setClipStyles(prev => ({ ...prev, [c.id]: s }));
-                    if (performWinRef.current && !performWinRef.current.closed)
-                      performWinRef.current.postMessage({ type: "updateClip", id: c.id, filter: CLIP_STYLES[s] }, "*");
+                    const pid = clipPerformIds.current[c.id];
+                    if (pid && performWinRef.current && !performWinRef.current.closed)
+                      performWinRef.current.postMessage({ type: "updateClip", id: pid, filter: CLIP_STYLES[s] }, "*");
                   }}
                   style={{ background: "#1a0033", color: "#cc99ff", border: "1px solid rgba(153,51,255,0.4)", borderRadius: 3, fontSize: 9, padding: "1px 2px", cursor: "pointer" }}
                 >
@@ -2629,8 +2631,9 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                   onChange={e => {
                     const m = e.target.value;
                     setClipBlends(prev => ({ ...prev, [c.id]: m }));
-                    if (performWinRef.current && !performWinRef.current.closed)
-                      performWinRef.current.postMessage({ type: "updateClip", id: c.id, mix: m }, "*");
+                    const pid = clipPerformIds.current[c.id];
+                    if (pid && performWinRef.current && !performWinRef.current.closed)
+                      performWinRef.current.postMessage({ type: "updateClip", id: pid, mix: m }, "*");
                   }}
                   style={{ background: "#1a0033", color: "#cc99ff", border: "1px solid rgba(153,51,255,0.4)", borderRadius: 3, fontSize: 9, padding: "1px 2px", cursor: "pointer" }}
                 >
