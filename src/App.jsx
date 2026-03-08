@@ -1380,9 +1380,19 @@ export default function App() {
     overlay:  { opacity: 1,    mix: "overlay" },
     ghost:    { opacity: 0.35, mix: "normal" },
   };
+  const CLIP_WIN_STYLES = {
+    normal:    "",
+    weave:     "sepia(0.55) contrast(1.35) brightness(0.92)",
+    lace:      "brightness(1.15) contrast(0.8) saturate(0.4)",
+    chart:     "grayscale(1) contrast(2) brightness(1.05)",
+    stitch:    "saturate(2) contrast(1.25) hue-rotate(10deg)",
+    threshold: "grayscale(1) contrast(100)",
+    cmyk:      "brightness(1.3) saturate(1.6) contrast(0.75) hue-rotate(15deg)",
+  };
   const clipNextIdRef = useRef(0);
   const clipWindowsRef = useRef([]); // { winId, label, win }
   const [clipWinTick, setClipWinTick] = useState(0); // triggers re-render when windows open/close
+  const [winStyles, setWinStyles] = useState({}); // winId -> style name
 
   const [grids, setGrids] = useState(() => {
     const o = {};
@@ -2070,7 +2080,7 @@ function addClip(id,dataUrl,mediaType){
     const pw = window.open("", `clipwin_${winId}`, "popup=1,width=640,height=640");
     if (!pw) return;
     const label = `win ${clipWindowsRef.current.filter(w => !w.win.closed).length + 1}`;
-    pw.document.write(`<!doctype html><html><head><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#000;overflow:hidden;width:100vw;height:100vh}#w{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}#w img,#w video{width:100%;height:100%;object-fit:contain;display:block}#fs{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);color:#fff;font:700 15px/1 monospace;letter-spacing:2px;cursor:pointer;z-index:9}#fs:hover{opacity:0.8}</style></head><body><div id="w"></div><div id="fs" onclick="document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();this.remove()">CLICK TO FULLSCREEN</div><script>function setContent(dataUrl,mediaType){var w=document.getElementById('w');w.innerHTML='';var el=document.createElement(mediaType==='video'?'video':'img');el.src=dataUrl;if(mediaType==='video'){el.autoplay=true;el.loop=true;el.muted=true;el.playsInline=true;}w.appendChild(el);}window.addEventListener('message',function(e){if(e.data&&e.data.type==='setContent')setContent(e.data.dataUrl,e.data.mediaType);});document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F'){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();var o=document.getElementById('fs');if(o)o.remove();}});<\/script></body></html>`);
+    pw.document.write(`<!doctype html><html><head><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#000;overflow:hidden;width:100vw;height:100vh}#w{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;transition:filter 0.3s}#w img,#w video{width:100%;height:100%;object-fit:contain;display:block}#fs{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);color:#fff;font:700 15px/1 monospace;letter-spacing:2px;cursor:pointer;z-index:9}#fs:hover{opacity:0.8}</style></head><body><div id="w"></div><div id="fs" onclick="document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();this.remove()">CLICK TO FULLSCREEN</div><script>function setContent(dataUrl,mediaType){var w=document.getElementById('w');w.innerHTML='';var el=document.createElement(mediaType==='video'?'video':'img');el.src=dataUrl;if(mediaType==='video'){el.autoplay=true;el.loop=true;el.muted=true;el.playsInline=true;}w.appendChild(el);}window.addEventListener('message',function(e){if(!e.data)return;if(e.data.type==='setContent')setContent(e.data.dataUrl,e.data.mediaType);else if(e.data.type==='setStyle')document.getElementById('w').style.filter=e.data.filter;});document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F'){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();var o=document.getElementById('fs');if(o)o.remove();}});<\/script></body></html>`);
     pw.document.close();
     // Set initial content
     setTimeout(() => pw.postMessage({ type: "setContent", dataUrl: clip.blobUrl, mediaType: clip.type }, "*"), 200);
@@ -2636,12 +2646,23 @@ function addClip(id,dataUrl,mediaType){
             {(() => { const openWins = clipWindowsRef.current.filter(w => !w.win.closed); return openWins.length > 0 && (
               <div style={{ marginBottom: 8, padding: "4px 6px", background: "rgba(255,102,204,0.06)", borderRadius: 5, border: "1px solid rgba(255,102,204,0.15)" }}>
                 <div style={{ fontSize: 10, color: "#ff99dd", marginBottom: 4, letterSpacing: 1 }}>open windows</div>
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                  {openWins.map(w => (
-                    <span key={w.winId} style={{ fontSize: 10, color: "#ff99dd", background: "rgba(255,102,204,0.12)", borderRadius: 3, padding: "1px 6px", border: "1px solid rgba(255,102,204,0.3)" }}>{w.label}</span>
-                  ))}
-                  <button onClick={() => { closeAllClipWindows(); }} style={{ ...btn(false), fontSize: 10, padding: "1px 6px", color: "#ff6666", borderColor: "#ff444466" }}>close all</button>
-                </div>
+                {openWins.map(w => (
+                  <div key={w.winId} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
+                    <span style={{ fontSize: 10, color: "#ff99dd", background: "rgba(255,102,204,0.12)", borderRadius: 3, padding: "1px 6px", border: "1px solid rgba(255,102,204,0.3)", flexShrink: 0 }}>{w.label}</span>
+                    <select
+                      value={winStyles[w.winId] ?? "normal"}
+                      onChange={e => {
+                        const s = e.target.value;
+                        setWinStyles(prev => ({ ...prev, [w.winId]: s }));
+                        if (!w.win.closed) w.win.postMessage({ type: "setStyle", filter: CLIP_WIN_STYLES[s] }, "*");
+                      }}
+                      style={{ flex: 1, background: "#1a0033", color: "#ff99dd", border: "1px solid rgba(255,102,204,0.3)", borderRadius: 3, fontSize: 9, padding: "1px 2px", cursor: "pointer" }}
+                    >
+                      {Object.keys(CLIP_WIN_STYLES).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                ))}
+                <button onClick={() => { closeAllClipWindows(); }} style={{ ...btn(false), fontSize: 10, padding: "1px 6px", color: "#ff6666", borderColor: "#ff444466", marginTop: 2 }}>close all</button>
               </div>
             ); })()}
             {clips.length === 0 && <div style={{ fontSize: 11, color: "rgba(200,169,110,0.4)", fontStyle: "italic" }}>upload images or videos</div>}
