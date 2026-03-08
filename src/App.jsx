@@ -795,28 +795,18 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   ctx.stroke(vPath);
 
-  const pad = Math.max(1, cell * 0.10);
-
   for (const L of layers) {
     const grid01 = grids[L.id];
     if (!grid01) continue;
     const [lr, lg, lb] = parseColor(L.color);
     const colorStr = `rgba(${lr},${lg},${lb},1)`;
 
-    ctx.fillStyle = colorStr;
-    ctx.globalCompositeOperation = bgImg ? "multiply" : "source-over";
-    ctx.globalAlpha = bgImg ? 0.55 : 0.25;
-    for (let y = 0; y < rows; y++) {
-      const row = grid01[y]; if (!row) continue;
-      for (let x = 0; x < cols; x++)
-        if (row[x] === 1) ctx.fillRect(x * cell + pad, y * cell + pad, cell - pad * 2, cell - pad * 2);
-    }
-    ctx.globalCompositeOperation = "source-over";
-
+    // V-stroke only — same as poster, no rectangle fill
     ctx.strokeStyle = colorStr;
-    ctx.lineWidth = Math.max(1.2, cell * 0.14);
+    ctx.lineWidth = Math.max(1.5, cell * 0.16);
     ctx.lineCap = "round"; ctx.lineJoin = "round";
-    ctx.globalAlpha = bgImg ? 0.40 : 0.55;
+    ctx.globalCompositeOperation = bgImg ? "multiply" : "source-over";
+    ctx.globalAlpha = bgImg ? 0.75 : 0.85;
     ctx.beginPath();
     for (let y = 0; y < rows; y++) {
       const row = grid01[y]; if (!row) continue;
@@ -830,6 +820,7 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
       }
     }
     ctx.stroke();
+    ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
   }
 
