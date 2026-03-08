@@ -808,6 +808,24 @@ async function imageToGrid01(file, rows, cols, { threshold = 0.5, invert = false
 }
 
 // ---- AUDIO LAYER ENGINE ----
+const BAND_RANGES = { sub:[0.00,0.03], bass:[0.03,0.10], lmid:[0.10,0.25], mid:[0.25,0.50], hi:[0.50,0.80], air:[0.80,1.00] };
+const BAND_KEYS = ["all","sub","bass","lmid","mid","hi","air"];
+const BAND_LABELS = { all:"all", sub:"sub", bass:"bass", lmid:"lmid", mid:"mid", hi:"hi", air:"air" };
+
+function computeBandEnergies(bins) {
+  const all = (() => { let s=0; for(let i=0;i<bins.length;i++) s+=bins[i]; return clamp(Math.pow(s/bins.length/255,0.7),0,1); })();
+  const boost = (v, b, p) => clamp(Math.pow(v*b, p), 0, 1);
+  return {
+    all,
+    sub:  boost(bandAvg(bins, ...BAND_RANGES.sub),  3.5, 0.55),
+    bass: boost(bandAvg(bins, ...BAND_RANGES.bass), 3.0, 0.55),
+    lmid: boost(bandAvg(bins, ...BAND_RANGES.lmid), 2.5, 0.60),
+    mid:  boost(bandAvg(bins, ...BAND_RANGES.mid),  2.0, 0.60),
+    hi:   boost(bandAvg(bins, ...BAND_RANGES.hi),   3.0, 0.65),
+    air:  boost(bandAvg(bins, ...BAND_RANGES.air),  4.0, 0.65),
+  };
+}
+
 function useAudioLayer() {
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
@@ -818,6 +836,7 @@ function useAudioLayer() {
   const rafRef = useRef(null);
   const [energy, setEnergy] = useState(0);
   const binsRef = useRef(new Uint8Array(512));
+  const bandsRef = useRef({ all:0, sub:0, bass:0, lmid:0, mid:0, hi:0, air:0 });
 
   async function stop() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -830,19 +849,22 @@ function useAudioLayer() {
     if (audioCtxRef.current) { try { await audioCtxRef.current.close(); } catch {} audioCtxRef.current = null; }
     setEnergy(0);
     binsRef.current = new Uint8Array(512);
+    bandsRef.current = { all:0, sub:0, bass:0, lmid:0, mid:0, hi:0, air:0 };
   }
 
   function startTick(analyser) {
     const bins = new Uint8Array(analyser.frequencyBinCount);
-    const tick = () => {
+    let lastUpdateMs = 0;
+    const tick = (now) => {
       analyser.getByteFrequencyData(bins);
       binsRef.current = bins;
-      let sum = 0;
-      for (let i = 0; i < bins.length; i++) sum += bins[i];
-      setEnergy(clamp(Math.pow(sum / bins.length / 255, 0.7), 0, 1));
+      const b = computeBandEnergies(bins);
+      bandsRef.current = b;
+      // Throttle React state to ~20fps — grid runs at full 60fps via refs
+      if (now - lastUpdateMs > 50) { lastUpdateMs = now; setEnergy(b.all); }
       rafRef.current = requestAnimationFrame(tick);
     };
-    tick();
+    tick(0);
   }
 
   async function startMic() {
@@ -897,7 +919,7 @@ function useAudioLayer() {
     if (gainRef.current && typeof gain === "number") gainRef.current.gain.setTargetAtTime(gain, ctx.currentTime, 0.01);
   }
 
-  return { energy, binsRef, startMic, startFileFromElement, startOsc, updateOsc, stop, streamRef };
+  return { energy, binsRef, bandsRef, startMic, startFileFromElement, startOsc, updateOsc, stop, streamRef };
 }
 
 function spectralCentroid01(bins) {
@@ -1059,28 +1081,37 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
   const NOTATION    = fabricInvert ? "rgba(200,170,110,0.7)" : "#8B6845";
   const TEXT_INK    = fabricInvert ? "#fdf3e7" : "#3d2b1f";
   ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
-  // Background image (from edit view)
+  // Build a single V-stitch path (all cells batched) — reused for both image masking and base texture
+  const vPath = new Path2D();
+  for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
+    const cx = x * cell; const cy = y * cell;
+    vPath.moveTo(cx + cell*0.12, cy + cell*0.10);
+    vPath.lineTo(cx + cell*0.50, cy + cell*0.88);
+    vPath.lineTo(cx + cell*0.88, cy + cell*0.10);
+  }
+  // If bgImg: composite it through the V-stitch mask so the image IS the fabric texture
   if (bgImg) {
+    const off = document.createElement("canvas"); off.width = W; off.height = H;
+    const ox = off.getContext("2d");
     const iw = bgImg.naturalWidth || bgImg.width || W;
     const ih = bgImg.naturalHeight || bgImg.height || H;
     const scale = Math.max(W / iw, H / ih);
+    ox.imageSmoothingEnabled = true;
+    ox.drawImage(bgImg, (W - iw*scale)/2, (H - ih*scale)/2, iw*scale, ih*scale);
+    // Clip to V-stitch shapes only
+    ox.globalCompositeOperation = "destination-in";
+    ox.lineWidth = Math.max(1.5, cell * 0.13); ox.lineCap = "round"; ox.lineJoin = "round";
+    ox.strokeStyle = "rgba(255,255,255,0.9)"; ox.stroke(vPath);
+    // Blend image-in-stitches onto poster
     ctx.save();
-    ctx.globalAlpha = 0.45;
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(bgImg, (W - iw * scale) / 2, (H - ih * scale) / 2, iw * scale, ih * scale);
-    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = fabricInvert ? 0.60 : 0.70;
+    ctx.globalCompositeOperation = fabricInvert ? "screen" : "multiply";
+    ctx.drawImage(off, 0, 0);
     ctx.restore();
   }
-  // Base V-texture
-  ctx.beginPath();
-  for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
-    const cx = x * cell; const cy = y * cell;
-    ctx.moveTo(cx + cell*0.12, cy + cell*0.10);
-    ctx.lineTo(cx + cell*0.50, cy + cell*0.88);
-    ctx.lineTo(cx + cell*0.88, cy + cell*0.10);
-  }
-  ctx.strokeStyle = FABRIC_BASE; ctx.lineWidth = Math.max(0.7, cell*0.09);
-  ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.stroke();
+  // Base V-texture (FABRIC_BASE) drawn on top of image-in-stitches
+  ctx.strokeStyle = FABRIC_BASE; ctx.lineWidth = Math.max(0.7, cell * 0.09);
+  ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.stroke(vPath);
   // Audio fabric layers
   if (fabricLayers && fabricLayers.length > 0) {
     const pad = Math.max(1, cell * 0.10);
@@ -1236,6 +1267,10 @@ export default function App() {
   const audioMapRef = useRef(audioMap);
   audioMapRef.current = audioMap;
 
+  // Which frequency band drives each layer ("all"|"sub"|"bass"|"lmid"|"mid"|"hi"|"air")
+  const [layerBand, setLayerBand] = useState({ A:"all", B:"all", C:"all", D:"all", F:"all", G:"all", H:"all" });
+  const layerBandRef = useRef(layerBand); layerBandRef.current = layerBand;
+
   const audioRefB = useRef(null);
   const audioRefC = useRef(null);
   const audioRefD = useRef(null);
@@ -1301,7 +1336,8 @@ export default function App() {
               acc[id] -= 1;
               const audio = audioMapRef.current[id];
               const bins = audio.binsRef.current;
-              const energy01 = audio.energy;
+              const bandKey = layerBandRef.current[id] ?? "all";
+              const energy01 = audio.bandsRef.current[bandKey] ?? audio.energy;
               const y = nextCursor[id] ?? 0;
               const row = brushRowFromAudio({ bins, cols, y, energy01, threshold: thresholds[id] ?? 0.55, tSec, guideRow: imageGuide?.[y], imageMode });
               if (nextGrids === prevGrids) nextGrids = { ...prevGrids };
@@ -2036,6 +2072,32 @@ export default function App() {
                 <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
                   {(L.type === "mic" ? ["off", "mic"] : ["off", "file"]).map((m) => (
                     <button key={m} onClick={() => setModes((s) => ({ ...s, [L.id]: m }))} style={btn(modes[L.id] === m)}>{m}</button>
+                  ))}
+                </div>
+                {/* Frequency band selector + live mini spectrum */}
+                <div style={{ display: "flex", gap: 4, alignItems: "flex-end", marginBottom: 6 }}>
+                  {/* "all" button */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                    <div style={{ width: 22, height: 18, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+                      <div style={{ width: 18, height: `${Math.max(3, (audioMap[L.id]?.energy ?? 0) * 100)}%`, background: LAYER_COLORS[L.id], borderRadius: 2, maxHeight: 18 }} />
+                    </div>
+                    <button onClick={() => setLayerBand(b => ({ ...b, [L.id]: "all" }))}
+                      style={{ padding: "1px 4px", fontSize: 9, borderRadius: 4, cursor: "pointer", border: `1px solid ${layerBand[L.id] === "all" ? LAYER_COLORS[L.id] : "rgba(255,255,255,0.15)"}`, background: layerBand[L.id] === "all" ? LAYER_COLORS[L.id] : "transparent", color: layerBand[L.id] === "all" ? "#000" : "rgba(255,255,255,0.45)" }}>
+                      all
+                    </button>
+                  </div>
+                  <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
+                  {/* Per-band buttons with live bars */}
+                  {["sub","bass","lmid","mid","hi","air"].map(bk => (
+                    <div key={bk} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                      <div style={{ width: 22, height: 18, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+                        <div style={{ width: 16, height: `${Math.max(3, (audioMap[L.id]?.bandsRef.current[bk] ?? 0) * 100)}%`, background: LAYER_COLORS[L.id], borderRadius: 2, maxHeight: 18, opacity: 0.8 }} />
+                      </div>
+                      <button onClick={() => setLayerBand(b => ({ ...b, [L.id]: bk }))}
+                        style={{ padding: "1px 4px", fontSize: 9, borderRadius: 4, cursor: "pointer", border: `1px solid ${layerBand[L.id] === bk ? LAYER_COLORS[L.id] : "rgba(255,255,255,0.15)"}`, background: layerBand[L.id] === bk ? LAYER_COLORS[L.id] : "transparent", color: layerBand[L.id] === bk ? "#000" : "rgba(255,255,255,0.45)" }}>
+                        {bk}
+                      </button>
+                    </div>
                   ))}
                 </div>
                 {L.type === "file" && (
