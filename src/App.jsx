@@ -15,36 +15,6 @@ function mirrorVertical01(grid) {
   return out;
 }
 
-function rleRow(row01) {
-  const segs = [];
-  let cur = row01[0];
-  let n = 1;
-  for (let i = 1; i < row01.length; i++) {
-    if (row01[i] === cur) n++;
-    else { segs.push({ v: cur, n }); cur = row01[i]; n = 1; }
-  }
-  segs.push({ v: cur, n });
-  return segs;
-}
-
-function instructionsFromGrid(grid01, { floatsWarnOver = 5 } = {}) {
-  const rows = grid01.length;
-  const out = [];
-  const warnings = [];
-  for (let r = 0; r < rows; r++) {
-    const y = rows - 1 - r;
-    const isRS = r % 2 === 0;
-    // WS rows are worked right→left: reverse the sequence so instructions read in working direction
-    const row = isRS ? grid01[y] : [...grid01[y]].reverse();
-    const segs = rleRow(row);
-    for (const s of segs)
-      if (s.n > floatsWarnOver)
-        warnings.push(`Row ${r + 1} (${isRS ? "RS" : "WS"}): ${s.n} ${s.v === 0 ? "MC" : "CC"} — catch float every ${floatsWarnOver} sts`);
-    const text = segs.map((s) => `${s.n} ${s.v === 0 ? "MC" : "CC"}`).join(", ");
-    out.push(`Row ${r + 1} (${isRS ? "RS" : "WS"}): ${text}`);
-  }
-  return { rowsText: out, warnings };
-}
 
 function downloadPNG(canvas, filename = "knit-weave.png") {
   const a = document.createElement("a");
@@ -1079,7 +1049,7 @@ function drawStaveGroup(ctx, centerRow, gridW, cell, color, seed) {
   ctx.globalAlpha = 1; ctx.setLineDash([]);
 }
 
-function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInvert, staveCount, notationSeed }) {
+function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInvert, staveCount, notationSeed, bgImg = null }) {
   const W = gridW * cell; const H = gridH * cell;
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
@@ -1089,6 +1059,18 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
   const NOTATION    = fabricInvert ? "rgba(200,170,110,0.7)" : "#8B6845";
   const TEXT_INK    = fabricInvert ? "#fdf3e7" : "#3d2b1f";
   ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+  // Background image (from edit view)
+  if (bgImg) {
+    const iw = bgImg.naturalWidth || bgImg.width || W;
+    const ih = bgImg.naturalHeight || bgImg.height || H;
+    const scale = Math.max(W / iw, H / ih);
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(bgImg, (W - iw * scale) / 2, (H - ih * scale) / 2, iw * scale, ih * scale);
+    ctx.imageSmoothingEnabled = false;
+    ctx.restore();
+  }
   // Base V-texture
   ctx.beginPath();
   for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
@@ -1199,8 +1181,6 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
-
-  const [floatWarnOver, setFloatWarnOver] = useState(5);
 
   const [grids, setGrids] = useState(() => {
     const o = {};
@@ -1343,7 +1323,6 @@ export default function App() {
   }, [LAYERS, modes, speeds, thresholds, cols, rows, symmetry, imageGuide, imageMode]);
 
   const combinedGrid = useMemo(() => combineN(grids, combineMode), [grids, combineMode]);
-  const knit = useMemo(() => instructionsFromGrid(combinedGrid, { floatsWarnOver: floatWarnOver }), [combinedGrid, floatWarnOver]);
 
   // Draw canvas
   useEffect(() => {
@@ -1715,15 +1694,6 @@ export default function App() {
     setIsRecording(false);
   }
 
-  function downloadPattern() {
-    const text = knit.rowsText.join("\n");
-    const blob = new Blob([text], { type: "text/plain" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `knit_pattern_${cols}x${rows}.txt`;
-    a.click();
-  }
-
   const energyAll = useMemo(() => {
     const e = {};
     for (const L of LAYERS) e[L.id] = Math.round((audioMap[L.id]?.energy ?? 0) * 100);
@@ -1737,6 +1707,7 @@ export default function App() {
   const gridsRef = useRef(grids); gridsRef.current = grids;
   const alphasRef = useRef(alphas); alphasRef.current = alphas;
   const colsRef = useRef(cols); colsRef.current = cols;
+  const bgImgRef = useRef(bgImg); bgImgRef.current = bgImg;
   const rowsRef = useRef(rows); rowsRef.current = rows;
 
   // ── POSTER state ─────────────────────────────────────────────────────────
@@ -1808,9 +1779,16 @@ export default function App() {
           fabricLayers, fabricInvert: fi = false, texts: ts = [], selectedId: sid,
           gridW: gw = colsRef.current, gridH: gh = rowsRef.current,
           overlayBlend: blend, overlayOpacity: opacity } = posterParamRef.current;
-        drawPoster(c, { gridW: gw, gridH: gh, cell: cs, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns });
+        drawPoster(c, { gridW: gw, gridH: gh, cell: cs, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns, bgImg: bgImgRef.current });
         if (ot && posterMediaRef.current && posterMaskRef.current)
           drawMediaOverlay(c, posterMediaRef.current, posterMaskRef.current, opacity, blend);
+        else if (!ot && overlayMediaRef.current) {
+          // Share edit view's overlay (full reveal, no brush mask)
+          const { ovBlend: eb, ovOpacity: eo } = ovParamRef.current;
+          const fm = document.createElement("canvas"); fm.width = c.width; fm.height = c.height;
+          fm.getContext("2d").fillRect(0, 0, fm.width, fm.height);
+          drawMediaOverlay(c, overlayMediaRef.current, fm, eo, eb);
+        }
         drawPosterSelectionHighlight(c, ts, sid, cs);
         if (tool === "brush" && posterMouseRef.current.over) {
           const ctx = c.getContext("2d");
@@ -1885,7 +1863,7 @@ export default function App() {
       texts: ts = [], gridW: gw = cols, gridH: gh = rows,
       overlayType: ot, overlayOpacity: opacity, overlayBlend: blend } = posterParamRef.current;
     const print = document.createElement("canvas");
-    drawPoster(print, { gridW: gw, gridH: gh, cell: cs * 3, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns });
+    drawPoster(print, { gridW: gw, gridH: gh, cell: cs * 3, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns, bgImg: bgImgRef.current });
     if (ot && posterMediaRef.current && posterMaskRef.current) {
       const scaledMask = document.createElement("canvas");
       scaledMask.width = print.width; scaledMask.height = print.height;
@@ -2032,7 +2010,65 @@ export default function App() {
             </div>
           </div>
 
-          {/* ── IMAGE CONTROLS (below canvas) ── */}
+          {/* ── SOUND CONTROLS (below canvas) ── */}
+
+          {/* Sound layers */}
+          <div style={panel}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: 1 }}>sound layers</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={syncPlayAll} style={{ ...btn(false), fontSize: 11, borderColor: "#00c878", color: "#00c878" }}>sync play</button>
+                <button onClick={pauseAll} style={{ ...btn(false), fontSize: 11 }}>pause all</button>
+              </div>
+            </div>
+            {LAYERS.map((L) => (
+              <div key={L.id} style={{ border: `1px solid ${ng20}`, borderRadius: 9, padding: 9, marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <b style={{ color: LAYER_COLORS[L.id], fontSize: 14, letterSpacing: 1 }}>{L.id}</b>
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{L.name}</span>
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: LAYER_COLORS[L.id], borderRadius: 3, transition: "width 0.1s" }} />
+                    <span style={muted}>{energyAll[L.id]}%</span>
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
+                  {(L.type === "mic" ? ["off", "mic"] : ["off", "file"]).map((m) => (
+                    <button key={m} onClick={() => setModes((s) => ({ ...s, [L.id]: m }))} style={btn(modes[L.id] === m)}>{m}</button>
+                  ))}
+                </div>
+                {L.type === "file" && (
+                  <div style={{ marginBottom: 6 }}>
+                    <input type="file" accept="audio/*" onChange={(e) => filePickerToAudio(audioRefs[L.id], e.target.files?.[0], L.id)} style={{ fontSize: 11 }} />
+                    <audio ref={audioRefs[L.id]} controls style={{ width: "100%", marginTop: 4, height: 28 }} />
+                  </div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                  <label style={label12}>speed
+                    <input type="range" min={1} max={30} value={speeds[L.id]}
+                      onChange={(e) => setSpeeds((s) => ({ ...s, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
+                    <span style={muted}>{speeds[L.id]}r/s</span>
+                  </label>
+                  <label style={label12}>threshold
+                    <input type="range" min={0} max={1} step={0.01} value={thresholds[L.id]}
+                      onChange={(e) => setThresholds((t) => ({ ...t, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
+                    <span style={muted}>{Math.round(thresholds[L.id] * 100)}%</span>
+                  </label>
+                  <label style={label12}>mix
+                    <input type="range" min={0} max={1} step={0.01} value={alphas[L.id]}
+                      onChange={(e) => setAlphas((a) => ({ ...a, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
+                    <span style={muted}>{Math.round(alphas[L.id] * 100)}%</span>
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+
+        </div>
+
+        {/* ── RIGHT: Image controls ── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 
           {/* Background image */}
           <div style={panel}>
@@ -2090,7 +2126,7 @@ export default function App() {
               style={{ ...btn(false), marginTop: 8, fontSize: 11 }}>clear guide</button>
           </div>
 
-          {/* Overlay brush — image/video behind stitches, painted with brush */}
+          {/* Overlay brush */}
           <div style={panel}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, letterSpacing: 1 }}>overlay brush</div>
             <div style={{ ...muted, fontSize: 11, marginBottom: 8 }}>image/video sits behind stitches — paint to reveal, stitches always on top</div>
@@ -2218,87 +2254,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* ── RIGHT: Sound + knitting ── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-
-          {/* Sound layers */}
-          <div style={panel}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: 1 }}>sound layers</div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={syncPlayAll} style={{ ...btn(false), fontSize: 11, borderColor: "#00c878", color: "#00c878" }}>sync play</button>
-                <button onClick={pauseAll} style={{ ...btn(false), fontSize: 11 }}>pause all</button>
-              </div>
-            </div>
-            {LAYERS.map((L) => (
-              <div key={L.id} style={{ border: `1px solid ${ng20}`, borderRadius: 9, padding: 9, marginBottom: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <b style={{ color: LAYER_COLORS[L.id], fontSize: 14, letterSpacing: 1 }}>{L.id}</b>
-                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{L.name}</span>
-                  </span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: LAYER_COLORS[L.id], borderRadius: 3, transition: "width 0.1s" }} />
-                    <span style={muted}>{energyAll[L.id]}%</span>
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
-                  {(L.type === "mic" ? ["off", "mic"] : ["off", "file"]).map((m) => (
-                    <button key={m} onClick={() => setModes((s) => ({ ...s, [L.id]: m }))} style={btn(modes[L.id] === m)}>{m}</button>
-                  ))}
-                </div>
-                {L.type === "file" && (
-                  <div style={{ marginBottom: 6 }}>
-                    <input type="file" accept="audio/*" onChange={(e) => filePickerToAudio(audioRefs[L.id], e.target.files?.[0], L.id)} style={{ fontSize: 11 }} />
-                    <audio ref={audioRefs[L.id]} controls style={{ width: "100%", marginTop: 4, height: 28 }} />
-                  </div>
-                )}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                  <label style={label12}>speed
-                    <input type="range" min={1} max={30} value={speeds[L.id]}
-                      onChange={(e) => setSpeeds((s) => ({ ...s, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
-                    <span style={muted}>{speeds[L.id]}r/s</span>
-                  </label>
-                  <label style={label12}>threshold
-                    <input type="range" min={0} max={1} step={0.01} value={thresholds[L.id]}
-                      onChange={(e) => setThresholds((t) => ({ ...t, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
-                    <span style={muted}>{Math.round(thresholds[L.id] * 100)}%</span>
-                  </label>
-                  <label style={label12}>mix
-                    <input type="range" min={0} max={1} step={0.01} value={alphas[L.id]}
-                      onChange={(e) => setAlphas((a) => ({ ...a, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
-                    <span style={muted}>{Math.round(alphas[L.id] * 100)}%</span>
-                  </label>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Knitting instructions */}
-          <div style={panel}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, letterSpacing: 1 }}>knitting instructions</div>
-            <label style={label12}>float warning (run length)
-              <input type="number" min={2} max={20} value={floatWarnOver}
-                onChange={(e) => setFloatWarnOver(clamp(Number(e.target.value) || 5, 2, 20))} style={{ marginTop: 4 }} />
-            </label>
-            {knit.warnings.length > 0
-              ? <div style={{ marginTop: 8, color: "#ff4444", fontSize: 11 }}>
-                  <b>warnings</b>
-                  <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
-                    {knit.warnings.slice(0, 8).map((w, i) => <li key={i}>{w}</li>)}
-                  </ul>
-                </div>
-              : <div style={{ marginTop: 8, ...muted, fontSize: 11 }}>no float warnings</div>
-            }
-            <textarea readOnly value={knit.rowsText.slice(0, 40).join("\n")}
-              style={{ width: "100%", height: 180, marginTop: 8, padding: 8, borderRadius: 8, fontSize: 11, boxSizing: "border-box" }} />
-            <div style={{ ...muted, marginTop: 6, fontSize: 11 }}>showing 40 of {knit.rowsText.length} rows</div>
-            <button onClick={downloadPattern} style={{ ...btn(true), marginTop: 8, width: "100%", boxShadow: `0 0 8px ${NG}` }}>
-              download pattern ({knit.rowsText.length} rows)
-            </button>
-          </div>
-        </div>
-
         {/* ── POSTER: collapsible 3rd column ── */}
         {posterOpen && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -2410,12 +2365,14 @@ export default function App() {
                   <textarea value={posterSelected.content}
                     onChange={(e) => updatePosterSelected({ content: e.target.value })}
                     style={{ width: "100%", height: 60, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 6, padding: 6, fontSize: 12, boxSizing: "border-box", resize: "vertical" }} />
+                  <label style={{ fontSize: 11, color: "#a07040", display: "block" }}>
+                    font size — {posterSelected.fontSize}px
+                    <input type="range" min={4} max={120} value={posterSelected.fontSize}
+                      onChange={(e) => updatePosterSelected({ fontSize: Number(e.target.value) })}
+                      style={{ marginTop: 3, display: "block", width: "100%" }} />
+                  </label>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                    <label style={{ fontSize: 11, color: "#a07040", display: "block" }}>font size
-                      <input type="number" min={4} max={80} value={posterSelected.fontSize}
-                        onChange={(e) => updatePosterSelected({ fontSize: Number(e.target.value) })}
-                        style={{ marginTop: 3, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 12, width: "100%", boxSizing: "border-box" }} />
-                    </label>
+                    <div />
                     <label style={{ fontSize: 11, color: "#a07040", display: "block" }}>font
                       <select value={posterSelected.fontFamily} onChange={(e) => updatePosterSelected({ fontFamily: e.target.value })}
                         style={{ marginTop: 3, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 12, width: "100%", boxSizing: "border-box" }}>
