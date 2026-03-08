@@ -1245,6 +1245,8 @@ const IDS = ["A", "B", "C", "D", "F", "G", "H"];
 
 export default function App() {
   const [layerColors, setLayerColors] = useState(DEFAULT_LAYER_BAND_COLORS);
+  const [layerBand, setLayerBand] = useState({ A:"all", B:"all", C:"all", D:"all", F:"all", G:"all", H:"all" });
+  const layerBandRef = useRef(layerBand); layerBandRef.current = layerBand;
 
   const LAYERS = useMemo(() => [
     { id: "A", name: "MIC",     type: "mic",  color: layerColors.A[layerBand.A ?? "all"] },
@@ -1336,9 +1338,6 @@ export default function App() {
   const audioMapRef = useRef(audioMap);
   audioMapRef.current = audioMap;
 
-  // Which frequency band drives each layer ("all"|"sub"|"bass"|"lmid"|"mid"|"hi"|"air")
-  const [layerBand, setLayerBand] = useState({ A:"all", B:"all", C:"all", D:"all", F:"all", G:"all", H:"all" });
-  const layerBandRef = useRef(layerBand); layerBandRef.current = layerBand;
 
   const audioRefB = useRef(null);
   const audioRefC = useRef(null);
