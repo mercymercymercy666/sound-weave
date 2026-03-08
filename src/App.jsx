@@ -1365,6 +1365,8 @@ export default function App() {
   const recordedChunksRef = useRef([]);
   const [performOpen, setPerformOpen] = useState(false);
   const performWinRef = useRef(null);
+  const [clips, setClips] = useState([]);
+  const clipNextIdRef = useRef(0);
 
   const [grids, setGrids] = useState(() => {
     const o = {};
@@ -1909,16 +1911,95 @@ export default function App() {
     }
     const pw = window.open("", "SoundWeavePerform", "popup=1,width=1280,height=720");
     if (!pw) return;
-    pw.document.write(`<!doctype html><html><head><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#000;overflow:hidden}canvas{display:block;width:100vw;height:100vh;object-fit:contain;image-rendering:pixelated}#fs{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.82);color:#fff;font:700 22px/1 monospace;letter-spacing:3px;cursor:pointer;z-index:9;transition:opacity 0.4s}#fs:hover{background:rgba(20,0,40,0.92);color:#cc99ff}</style></head><body><canvas id="pc"></canvas><div id="fs" onclick="document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();this.style.opacity=0;setTimeout(()=>this.remove(),400)">CLICK TO FULLSCREEN</div><script>window.addEventListener('message',function(e){if(!e.data||e.data.type!=='frame')return;var c=document.getElementById('pc');var b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();});document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F'){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();var o=document.getElementById('fs');if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}}});<\/script></body></html>`);
+    const html = `<!doctype html><html><head><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;overflow:hidden;width:100vw;height:100vh}
+#pc{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
+#clips{position:absolute;inset:0;pointer-events:none}
+.clip{position:absolute;pointer-events:all;cursor:move;user-select:none;min-width:40px;min-height:40px}
+.clip img,.clip video{display:block;width:100%;height:100%;object-fit:contain}
+.clip-bar{position:absolute;top:-22px;left:0;right:0;height:22px;background:rgba(0,0,0,0.7);display:flex;align-items:center;gap:4px;padding:0 4px;font:11px monospace;color:#ccc}
+.clip-name{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:10px;opacity:0.7}
+.clip-btn{background:none;border:none;color:#fff;cursor:pointer;padding:1px 4px;font-size:12px;line-height:1;border-radius:3px}
+.clip-btn:hover{background:rgba(255,255,255,0.2)}
+.clip-resize{position:absolute;bottom:0;right:0;width:14px;height:14px;cursor:se-resize;background:linear-gradient(135deg,transparent 50%,rgba(255,153,51,0.8) 50%)}
+#fs{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.82);color:#fff;font:700 22px/1 monospace;letter-spacing:3px;cursor:pointer;z-index:999;transition:opacity 0.4s}
+#fs:hover{background:rgba(20,0,40,0.92);color:#cc99ff}
+</style></head><body>
+<canvas id="pc"></canvas>
+<div id="clips"></div>
+<div id="fs" onclick="goFS()">CLICK TO FULLSCREEN</div>
+<script>
+function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();var o=document.getElementById('fs');if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}}
+document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F')goFS();});
+window.addEventListener('message',function(e){
+  if(!e.data)return;
+  if(e.data.type==='frame'){var c=document.getElementById('pc'),b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();}
+  else if(e.data.type==='addClip')addClip(e.data.id,e.data.dataUrl,e.data.mediaType);
+  else if(e.data.type==='removeClip'){var el=document.getElementById('clip-'+e.data.id);if(el)el.remove();}
+  else if(e.data.type==='updateClip'){var el=document.getElementById('clip-'+e.data.id);if(el){if(e.data.opacity!=null)el.style.opacity=e.data.opacity;if(e.data.mix!=null)el.style.mixBlendMode=e.data.mix;}}
+});
+function makeDraggable(div,resize){
+  var dragging=false,rx=0,ry=0,rl=0,rt=0;
+  div.addEventListener('mousedown',function(e){if(e.target===resize||e.target.classList.contains('clip-btn'))return;dragging=true;rx=e.clientX;ry=e.clientY;rl=parseInt(div.style.left)||0;rt=parseInt(div.style.top)||0;div.style.zIndex=Date.now()%9000+1000;e.preventDefault();});
+  window.addEventListener('mousemove',function(e){if(dragging){div.style.left=(rl+e.clientX-rx)+'px';div.style.top=(rt+e.clientY-ry)+'px';}});
+  window.addEventListener('mouseup',function(){dragging=false;});
+  var resizing=false,rsx=0,rsw=0,rsh=0;
+  resize.addEventListener('mousedown',function(e){resizing=true;rsx=e.clientX;rsw=div.offsetWidth;rsh=div.offsetHeight;e.stopPropagation();e.preventDefault();});
+  window.addEventListener('mousemove',function(e){if(resizing){var dw=e.clientX-rsx;div.style.width=Math.max(40,rsw+dw)+'px';div.style.height=Math.max(40,rsh+dw*(rsh/rsw))+'px';}});
+  window.addEventListener('mouseup',function(){resizing=false;});
+}
+function addClip(id,dataUrl,mediaType){
+  var clips=document.getElementById('clips');
+  var div=document.createElement('div');div.id='clip-'+id;div.className='clip';
+  div.style.cssText='left:80px;top:80px;width:280px;height:280px;';
+  var bar=document.createElement('div');bar.className='clip-bar';
+  var name=document.createElement('span');name.className='clip-name';name.textContent=mediaType+' clip';bar.appendChild(name);
+  var closeBtn=document.createElement('button');closeBtn.className='clip-btn';closeBtn.textContent='×';closeBtn.onclick=function(){div.remove();};bar.appendChild(closeBtn);
+  div.appendChild(bar);
+  var inner;
+  if(mediaType==='video'){inner=document.createElement('video');inner.src=dataUrl;inner.autoplay=true;inner.loop=true;inner.muted=true;}
+  else{inner=document.createElement('img');inner.src=dataUrl;}
+  inner.style.cssText='display:block;width:100%;height:100%;object-fit:contain;';div.appendChild(inner);
+  var resize=document.createElement('div');resize.className='clip-resize';div.appendChild(resize);
+  makeDraggable(div,resize);
+  clips.appendChild(div);
+}
+<\/script></body></html>`;
+    pw.document.write(html);
     pw.document.close();
     performWinRef.current = pw;
     setPerformOpen(true);
+    // Send any existing clips once window has loaded
+    if (clips.length > 0) {
+      setTimeout(() => {
+        clips.forEach(c => {
+          if (!pw.closed) pw.postMessage({ type: "addClip", id: c.id, dataUrl: c.blobUrl, mediaType: c.type }, "*");
+        });
+      }, 600);
+    }
   }
 
   function closePerformWindow() {
     performWinRef.current?.close();
     performWinRef.current = null;
     setPerformOpen(false);
+  }
+
+  function addClip(file) {
+    const url = URL.createObjectURL(file);
+    const type = file.type.startsWith("video") ? "video" : "image";
+    const id = clipNextIdRef.current++;
+    const clip = { id, name: file.name, blobUrl: url, type };
+    setClips(prev => [...prev, clip]);
+    if (performWinRef.current && !performWinRef.current.closed)
+      performWinRef.current.postMessage({ type: "addClip", id, dataUrl: url, mediaType: type }, "*");
+  }
+
+  function removeClip(id) {
+    setClips(prev => { const c = prev.find(x => x.id === id); if (c) URL.revokeObjectURL(c.blobUrl); return prev.filter(x => x.id !== id); });
+    if (performWinRef.current && !performWinRef.current.closed)
+      performWinRef.current.postMessage({ type: "removeClip", id }, "*");
   }
 
   const energyAll = useMemo(() => {
@@ -2442,6 +2523,29 @@ export default function App() {
                 </div>
               </>
             )}
+          </div>
+
+          {/* Perform clips */}
+          <div style={panel}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, letterSpacing: 1, color: "#cc99ff" }}>perform clips</div>
+            <label style={{ ...label12, display: "block", marginBottom: 8 }}>
+              <span style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", cursor: "pointer", display: "inline-block" }}>+ add image / video</span>
+              <input type="file" accept="image/*,video/*" style={{ display: "none" }}
+                onChange={e => { if (e.target.files[0]) { addClip(e.target.files[0]); e.target.value = ""; } }} />
+            </label>
+            {clips.length === 0 && <div style={{ fontSize: 11, color: "rgba(200,169,110,0.4)", fontStyle: "italic" }}>upload images or videos — they appear as draggable frames in the perform window</div>}
+            {clips.map(c => (
+              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, background: "rgba(153,51,255,0.08)", borderRadius: 5, padding: "4px 6px" }}>
+                {c.type === "image"
+                  ? <img src={c.blobUrl} style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)" }} />
+                  : <div style={{ width: 32, height: 32, background: "#1a0033", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>▶</div>
+                }
+                <span style={{ flex: 1, fontSize: 10, color: "#cc99ff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                <button onClick={() => { if (performWinRef.current && !performWinRef.current.closed) performWinRef.current.postMessage({ type: "addClip", id: c.id + Date.now(), dataUrl: c.blobUrl, mediaType: c.type }, "*"); }}
+                  style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", padding: "2px 6px", fontSize: 10 }}>send</button>
+                <button onClick={() => removeClip(c.id)} style={{ ...btn(false), padding: "2px 6px", fontSize: 10, color: "#ff6666", borderColor: "#ff444466" }}>×</button>
+              </div>
+            ))}
           </div>
 
           {/* Style */}
