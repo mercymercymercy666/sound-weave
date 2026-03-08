@@ -1764,13 +1764,6 @@ export default function App() {
         ctx.drawImage(oc, 0, 0);
         ctx.globalCompositeOperation = "source-over";
       }
-      // Apply edit invert to perform output
-      if (editInvertRef.current) {
-        ctx.globalCompositeOperation = "difference";
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, W, H);
-        ctx.globalCompositeOperation = "source-over";
-      }
       createImageBitmap(offCanvas).then(bmp => {
         if (!pw || pw.closed) { bmp.close(); setPerformOpen(false); return; }
         pw.postMessage({ type: "frame", bitmap: bmp }, "*", [bmp]);
