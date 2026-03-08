@@ -2196,13 +2196,6 @@ function addClip(id,dataUrl,mediaType){
           fm.getContext("2d").fillRect(0, 0, fm.width, fm.height);
           drawMediaOverlay(c, overlayMediaRef.current, fm, eo, eb);
         }
-        if (editInvertRef.current) {
-          const ctx = c.getContext("2d");
-          ctx.globalCompositeOperation = "difference";
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, c.width, c.height);
-          ctx.globalCompositeOperation = "source-over";
-        }
         drawPosterSelectionHighlight(c, ts, sid, cs);
         if (tool === "brush" && posterMouseRef.current.over) {
           const ctx = c.getContext("2d");
@@ -2797,7 +2790,7 @@ function addClip(id,dataUrl,mediaType){
               {/* Poster canvas — drag to move texts, brush to paint overlay */}
               <div style={{ overflow: "auto", borderRadius: 8, lineHeight: 0, border: "1px solid #3a2e20" }}>
                 <canvas ref={posterCanvasRef}
-                  style={{ display: "block", cursor: posterActiveTool === "brush" && posterOvType ? "crosshair" : posterCursor }}
+                  style={{ display: "block", cursor: posterActiveTool === "brush" && posterOvType ? "crosshair" : posterCursor, filter: editInvert ? "invert(1)" : "none" }}
                   onMouseDown={(e) => {
                     const tool = posterParamRef.current.activeTool;
                     if (tool === "brush" && posterParamRef.current.overlayType) { posterIsPaintingRef.current = true; posterPaintAt(e.clientX, e.clientY); return; }
