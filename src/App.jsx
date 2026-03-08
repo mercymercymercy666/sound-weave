@@ -624,8 +624,8 @@ function drawChart(canvas, grids, layers, bgImg, cell, opts = {}) {
 
         // Knit stitch V-symbol — bold and clear
         if (sw >= 5) {
-          const vW = sw * 0.34, vTop = py + sh * 0.15, vBot = py + sh * 0.75;
-          const vLw = Math.max(1.2, sw * 0.14);
+          const vW = sw * 0.52, vTop = py + sh * 0.10, vBot = py + sh * 0.82;
+          const vLw = Math.max(1.5, sw * 0.22);
           // Shadow behind V for depth
           ctx.save();
           ctx.shadowColor = "rgba(0,0,0,0.6)";
@@ -1275,8 +1275,11 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
       const lines = t.content.split("\n"); const lineH = fs * 1.25;
       ctx.shadowColor = fabricInvert ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.6)";
       ctx.shadowBlur = Math.max(2, cell * 0.5);
-      ctx.fillStyle = TEXT_INK; ctx.globalAlpha = 0.92;
+      ctx.fillStyle = TEXT_INK;
+      ctx.globalAlpha = t.opacity ?? 0.92;
+      ctx.globalCompositeOperation = t.blend ?? "source-over";
       for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], t.x * cell, t.y * cell + i * lineH);
+      ctx.globalCompositeOperation = "source-over";
     }
     ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false;
   }
@@ -1350,6 +1353,8 @@ export default function App() {
   const [maskImg, setMaskImg] = useState(null);
   const [patternMode, setPatternMode] = useState("weave"); // "weave"|"lace"|"chart"|"stitch"
   const [stitchInvert, setStitchInvert] = useState(false);
+  const [editInvert, setEditInvert] = useState(false);
+  const editInvertRef = useRef(false);
 
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
@@ -1358,6 +1363,8 @@ export default function App() {
   const performWinRef = useRef(null);
   const [clips, setClips] = useState([]);
   const clipNextIdRef = useRef(0);
+  const clipWindowsRef = useRef([]); // { winId, label, win }
+  const [clipWinTick, setClipWinTick] = useState(0); // triggers re-render when windows open/close
 
   const [grids, setGrids] = useState(() => {
     const o = {};
@@ -1429,6 +1436,7 @@ export default function App() {
   const overlayBgCanvasRef = useRef(null); // sits BEHIND main canvas so stitches show on top
   const overlayMediaRef   = useRef(null);
   const ovIsPaintingRef   = useRef(false);
+  const maskHistoryRef    = useRef([]); // undo stack for brush strokes
   const ovMouseRef        = useRef({ x: 0, y: 0, over: false });
   const ovParamRef        = useRef({});
   const rowCursorRef      = useRef(rowCursor);
@@ -1664,6 +1672,18 @@ export default function App() {
     ovParamRef.current = { ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode };
   }, [ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode]);
 
+  useEffect(() => { editInvertRef.current = editInvert; }, [editInvert]);
+
+  // Brush undo — Ctrl+Z restores last mask snapshot
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undoBrushStroke(); }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Overlay RAF loop — draws overlay + cursor on overlayCanvasRef (on top of stitches, blend modes let stitches show through)
   useEffect(() => {
     let raf;
@@ -1672,14 +1692,14 @@ export default function App() {
       const sc = canvasRef.current;
       const mc = overlayMaskRef.current;
       const me = overlayMediaRef.current;
-      const { ovType: ot, ovBlend: blend, ovOpacity: opacity, ovActiveTool: tool, ovBrushSize: bs } = ovParamRef.current;
+      const { ovType: ot, ovOpacity: opacity, ovActiveTool: tool, ovBrushSize: bs } = ovParamRef.current;
       if (!oc || !sc) { raf = requestAnimationFrame(step); return; }
       const W = sc.width, H = sc.height;
       if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
       const ctx = oc.getContext("2d");
       ctx.clearRect(0, 0, W, H);
-      // Draw overlay (on top of stitches — blend modes let stitches show through)
-      if (ot && me && mc) drawMediaOverlay(oc, me, mc, opacity, blend);
+      // Draw overlay — always source-over; CSS mix-blend-mode on the canvas element handles blending with stitches
+      if (ot && me && mc) drawMediaOverlay(oc, me, mc, opacity, "source-over");
       // Draw brush cursor on top
       if (tool === "brush" && ot && ovMouseRef.current.over) {
         const cs = clamp(cell, 4, 30);
@@ -1714,8 +1734,21 @@ export default function App() {
         offCanvas.width = W; offCanvas.height = H;
       }
       const ctx = offCanvas.getContext("2d");
+      ctx.clearRect(0, 0, W, H);
       ctx.drawImage(mc, 0, 0);
-      if (oc && oc.width === W && oc.height === H) ctx.drawImage(oc, 0, 0);
+      if (oc && oc.width === W && oc.height === H) {
+        const ob = ovParamRef.current.ovBlend ?? "source-over";
+        ctx.globalCompositeOperation = ob;
+        ctx.drawImage(oc, 0, 0);
+        ctx.globalCompositeOperation = "source-over";
+      }
+      // Apply edit invert to perform output
+      if (editInvertRef.current) {
+        ctx.globalCompositeOperation = "difference";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalCompositeOperation = "source-over";
+      }
       createImageBitmap(offCanvas).then(bmp => {
         if (!pw || pw.closed) { bmp.close(); setPerformOpen(false); return; }
         pw.postMessage({ type: "frame", bitmap: bmp }, "*", [bmp]);
@@ -1826,6 +1859,20 @@ export default function App() {
     if (overlayMediaRef.current?._objUrl) URL.revokeObjectURL(overlayMediaRef.current._objUrl);
     overlayMediaRef.current = null; overlayMaskRef.current = null;
     setOvType(null); setOvActiveTool("grid");
+  }
+
+  function saveMaskSnapshot() {
+    const mc = overlayMaskRef.current;
+    if (!mc) return;
+    const snap = mc.getContext("2d").getImageData(0, 0, mc.width, mc.height);
+    maskHistoryRef.current.push(snap);
+    if (maskHistoryRef.current.length > 20) maskHistoryRef.current.shift();
+  }
+
+  function undoBrushStroke() {
+    const mc = overlayMaskRef.current;
+    if (!mc || maskHistoryRef.current.length === 0) return;
+    mc.getContext("2d").putImageData(maskHistoryRef.current.pop(), 0, 0);
   }
 
   function ovPaintAt(clientX, clientY) {
@@ -1993,6 +2040,31 @@ function addClip(id,dataUrl,mediaType){
       performWinRef.current.postMessage({ type: "removeClip", id }, "*");
   }
 
+  function openClipWindow(clip) {
+    const winId = Date.now();
+    const pw = window.open("", `clipwin_${winId}`, "popup=1,width=640,height=640");
+    if (!pw) return;
+    const label = `win ${clipWindowsRef.current.filter(w => !w.win.closed).length + 1}`;
+    pw.document.write(`<!doctype html><html><head><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#000;overflow:hidden;width:100vw;height:100vh}#w{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}#w img,#w video{width:100%;height:100%;object-fit:contain;display:block}#fs{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);color:#fff;font:700 15px/1 monospace;letter-spacing:2px;cursor:pointer;z-index:9}#fs:hover{opacity:0.8}</style></head><body><div id="w"></div><div id="fs" onclick="document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();this.remove()">CLICK TO FULLSCREEN</div><script>function setContent(dataUrl,mediaType){var w=document.getElementById('w');w.innerHTML='';var el=document.createElement(mediaType==='video'?'video':'img');el.src=dataUrl;if(mediaType==='video'){el.autoplay=true;el.loop=true;el.muted=true;el.playsInline=true;}w.appendChild(el);}window.addEventListener('message',function(e){if(e.data&&e.data.type==='setContent')setContent(e.data.dataUrl,e.data.mediaType);});document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F'){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();var o=document.getElementById('fs');if(o)o.remove();}});<\/script></body></html>`);
+    pw.document.close();
+    // Set initial content
+    setTimeout(() => pw.postMessage({ type: "setContent", dataUrl: clip.blobUrl, mediaType: clip.type }, "*"), 200);
+    clipWindowsRef.current = [...clipWindowsRef.current.filter(w => !w.win.closed), { winId, label, win: pw }];
+    setClipWinTick(t => t + 1);
+  }
+
+  function sendToClipWindow(winId, clip) {
+    const entry = clipWindowsRef.current.find(w => w.winId === winId);
+    if (entry && !entry.win.closed)
+      entry.win.postMessage({ type: "setContent", dataUrl: clip.blobUrl, mediaType: clip.type }, "*");
+  }
+
+  function closeAllClipWindows() {
+    clipWindowsRef.current.forEach(w => { if (!w.win.closed) w.win.close(); });
+    clipWindowsRef.current = [];
+    setClipWinTick(t => t + 1);
+  }
+
   const energyAll = useMemo(() => {
     const e = {};
     for (const L of LAYERS) e[L.id] = Math.round((audioMap[L.id]?.energy ?? 0) * 100);
@@ -2012,7 +2084,7 @@ function addClip(id,dataUrl,mediaType){
   // ── POSTER state ─────────────────────────────────────────────────────────
   const [posterOpen, setPosterOpen] = useState(false);
   const [posterTexts, setPosterTexts] = useState([
-    { id: 0, content: "SOUND WEAVE", fontSize: 18, fontFamily: "serif", bold: true, x: 8, y: 68, knit: true },
+    { id: 0, content: "SOUND WEAVE", fontSize: 18, fontFamily: "serif", bold: true, x: 8, y: 68, knit: true, opacity: 1, blend: "source-over" },
   ]);
   const [posterSelectedId, setPosterSelectedId] = useState(0);
   const [posterNextId, setPosterNextId] = useState(1);
@@ -2148,7 +2220,7 @@ function addClip(id,dataUrl,mediaType){
   }
   function addPosterText() {
     const id = posterNextId; setPosterNextId(id + 1);
-    setPosterTexts(prev => [...prev, { id, content: "New text", fontSize: 18, fontFamily: "serif", bold: false, x: 8, y: 8, knit: true }]);
+    setPosterTexts(prev => [...prev, { id, content: "New text", fontSize: 18, fontFamily: "serif", bold: false, x: 8, y: 8, knit: true, opacity: 1, blend: "source-over" }]);
     setPosterSelectedId(id);
   }
   function removePosterText(id) {
@@ -2221,6 +2293,13 @@ function addClip(id,dataUrl,mediaType){
                     </button>
                   ))}
                 </div>
+                <button onClick={() => setEditInvert(v => !v)}
+                  style={{ padding: "5px 13px", borderRadius: 7, fontSize: 12, cursor: "pointer", fontWeight: 700, border: `1px solid ${editInvert ? "#fff" : ng20}`,
+                    background: editInvert ? "#fff" : "transparent",
+                    color: editInvert ? "#000" : "rgba(255,255,255,0.45)",
+                    letterSpacing: 1, transition: "all 0.15s" }}>
+                  invert
+                </button>
                 <div style={{ width: 1, height: 20, background: ng20 }} />
                 <button onClick={() => setGrids(() => { const o = {}; for (const id of IDS) o[id] = makeGrid(rows, cols, 0); return o; })}
                   style={btn(false)}>clear</button>
@@ -2234,8 +2313,6 @@ function addClip(id,dataUrl,mediaType){
                   ? <button onClick={closePerformWindow} style={{ ...btn(true), background: "#6600cc", borderColor: "#9933ff", color: "#fff", boxShadow: "0 0 10px #9933ff" }}>✕ perform</button>
                   : <button onClick={openPerformWindow} style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", boxShadow: "0 0 6px #9933ff44" }}>⬡ perform</button>
                 }
-                <button onClick={() => window.open(location.href, "_blank", "popup=1,width=1280,height=900")}
-                  style={{ ...btn(false), borderColor: "#ff66cc", color: "#ff99dd", boxShadow: "0 0 6px #ff66cc44" }}>+ new window</button>
                 <button onClick={() => setPosterOpen(o => !o)}
                   style={{ ...btn(posterOpen), borderColor: posterOpen ? NG : "#c8a96e", color: posterOpen ? "#000" : "#c8a96e" }}>
                   poster {posterOpen ? "▶" : "◀"}
@@ -2244,7 +2321,7 @@ function addClip(id,dataUrl,mediaType){
             </div>
 
             {/* Canvas stack: overlayBg (behind) → canvas → notation → cursor */}
-            <div style={{ position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)` }}>
+            <div style={{ position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)`, filter: editInvert ? "invert(1)" : "none" }}>
               {/* overlay image/video — BEHIND stitches */}
               {/* main stitch canvas */}
               <canvas ref={canvasRef}
@@ -2260,8 +2337,9 @@ function addClip(id,dataUrl,mediaType){
               <canvas ref={overlayCanvasRef}
                 style={{ position: "absolute", top: 0, left: 0,
                   pointerEvents: ovActiveTool === "brush" && ovType ? "auto" : "none",
-                  cursor: "crosshair" }}
-                onMouseDown={(e) => { ovIsPaintingRef.current = true; ovPaintAt(e.clientX, e.clientY); }}
+                  cursor: "crosshair",
+                  mixBlendMode: ovType ? ovBlend : "normal" }}
+                onMouseDown={(e) => { saveMaskSnapshot(); ovIsPaintingRef.current = true; ovPaintAt(e.clientX, e.clientY); }}
                 onMouseMove={(e) => {
                   const rect = overlayCanvasRef.current?.getBoundingClientRect();
                   if (rect) ovMouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top, over: true };
@@ -2516,27 +2594,63 @@ function addClip(id,dataUrl,mediaType){
             )}
           </div>
 
-          {/* Perform clips */}
-          <div style={panel}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, letterSpacing: 1, color: "#cc99ff" }}>perform clips</div>
-            <label style={{ ...label12, display: "block", marginBottom: 8 }}>
-              <span style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", cursor: "pointer", display: "inline-block" }}>+ add image / video</span>
-              <input type="file" accept="image/*,video/*" style={{ display: "none" }}
-                onChange={e => { if (e.target.files[0]) { addClip(e.target.files[0]); e.target.value = ""; } }} />
-            </label>
-            {clips.length === 0 && <div style={{ fontSize: 11, color: "rgba(200,169,110,0.4)", fontStyle: "italic" }}>upload images or videos — they appear as draggable frames in the perform window</div>}
-            {clips.map(c => (
-              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, background: "rgba(153,51,255,0.08)", borderRadius: 5, padding: "4px 6px" }}>
-                {c.type === "image"
-                  ? <img src={c.blobUrl} style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)" }} />
-                  : <div style={{ width: 32, height: 32, background: "#1a0033", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>▶</div>
-                }
-                <span style={{ flex: 1, fontSize: 10, color: "#cc99ff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-                <button onClick={() => { if (performWinRef.current && !performWinRef.current.closed) performWinRef.current.postMessage({ type: "addClip", id: c.id + Date.now(), dataUrl: c.blobUrl, mediaType: c.type }, "*"); }}
-                  style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", padding: "2px 6px", fontSize: 10 }}>send</button>
-                <button onClick={() => removeClip(c.id)} style={{ ...btn(false), padding: "2px 6px", fontSize: 10, color: "#ff6666", borderColor: "#ff444466" }}>×</button>
+          {/* Perform clips — Winamp-style 2000s UI */}
+          <div style={{ ...panel, background: "#fff", border: "2px solid #b0b8e8", borderRadius: 10, padding: 0, overflow: "hidden" }}>
+            {/* Title bar */}
+            <div style={{ background: "linear-gradient(90deg, #7ba7e0 0%, #c3b1e1 50%, #f9a8d4 100%)", padding: "5px 10px", display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ display: "flex", gap: 3 }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#ff6b6b", border: "1px solid #cc4444" }} />
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#ffd166", border: "1px solid #ccaa00" }} />
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#88d8b0", border: "1px solid #44aa77" }} />
               </div>
-            ))}
+              <span style={{ fontFamily: "'Trebuchet MS', Arial, sans-serif", fontSize: 11, fontWeight: 700, color: "#3a2a6e", letterSpacing: 1, textShadow: "0 1px 0 rgba(255,255,255,0.6)" }}>PERFORM CLIPS</span>
+            </div>
+            <div style={{ padding: "10px 10px 8px" }}>
+              <label style={{ display: "block", marginBottom: 8 }}>
+                <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif",
+                  background: "linear-gradient(135deg, #c3b1e1, #f9a8d4)", border: "1px solid #b0b8e8", color: "#3a2a6e", boxShadow: "0 2px 4px rgba(100,80,200,0.2), inset 0 1px 0 rgba(255,255,255,0.7)" }}>
+                  + add image / video
+                </span>
+                <input type="file" accept="image/*,video/*" style={{ display: "none" }}
+                  onChange={e => { if (e.target.files[0]) { addClip(e.target.files[0]); e.target.value = ""; } }} />
+              </label>
+              {/* Open clip windows */}
+              {(() => { const openWins = clipWindowsRef.current.filter(w => !w.win.closed); return openWins.length > 0 && (
+                <div style={{ marginBottom: 8, padding: "4px 8px", background: "#eef2ff", borderRadius: 6, border: "1px solid #b0b8e8" }}>
+                  <div style={{ fontSize: 10, color: "#6655aa", marginBottom: 4, fontWeight: 700, fontFamily: "'Trebuchet MS', Arial, sans-serif", letterSpacing: 0.5 }}>open windows</div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {clipWindowsRef.current.filter(w => !w.win.closed).map(w => (
+                      <span key={w.winId} style={{ fontSize: 10, color: "#6655aa", background: "#d4c8f5", borderRadius: 3, padding: "1px 7px", border: "1px solid #b0a0e0", fontFamily: "'Trebuchet MS', Arial, sans-serif" }}>{w.label}</span>
+                    ))}
+                    <button onClick={() => { closeAllClipWindows(); }}
+                      style={{ fontSize: 10, padding: "1px 7px", background: "#ffd6d6", border: "1px solid #ffaaaa", borderRadius: 3, color: "#cc2222", cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif" }}>close all</button>
+                  </div>
+                </div>
+              ); })()}
+              {clips.length === 0 && <div style={{ fontSize: 11, color: "#aaa", fontStyle: "italic", fontFamily: "'Trebuchet MS', Arial, sans-serif", textAlign: "center", padding: "8px 0" }}>drop images or videos here</div>}
+              {clips.map(c => {
+                const openWins = clipWindowsRef.current.filter(w => !w.win.closed);
+                return (
+                  <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4, background: "#f0f4ff", borderRadius: 6, padding: "4px 6px", border: "1px solid #d0d8f8", flexWrap: "wrap" }}>
+                    {c.type === "image"
+                      ? <img src={c.blobUrl} style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 3, border: "1px solid #c0caee", flexShrink: 0 }} />
+                      : <div style={{ width: 28, height: 28, background: "#e0d8f8", borderRadius: 3, border: "1px solid #c0caee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#7060c0", flexShrink: 0 }}>▶</div>
+                    }
+                    <span style={{ flex: 1, fontSize: 10, color: "#444", fontFamily: "'Trebuchet MS', Arial, sans-serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{c.name}</span>
+                    <button onClick={() => openClipWindow(c)}
+                      style={{ fontSize: 10, padding: "2px 6px", background: "#d4f5e9", border: "1px solid #88ccaa", borderRadius: 3, color: "#226644", cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif" }} title="open in new popup">↗</button>
+                    {openWins.map(w => (
+                      <button key={w.winId} onClick={() => sendToClipWindow(w.winId, c)}
+                        style={{ fontSize: 9, padding: "2px 5px", background: "#fde8f8", border: "1px solid #e0aadd", borderRadius: 3, color: "#882277", cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif" }} title={`send to ${w.label}`}>{w.label}</button>
+                    ))}
+                    <button onClick={() => { if (performWinRef.current && !performWinRef.current.closed) performWinRef.current.postMessage({ type: "addClip", id: c.id + Date.now(), dataUrl: c.blobUrl, mediaType: c.type }, "*"); }}
+                      style={{ fontSize: 10, padding: "2px 6px", background: "#e8d8f8", border: "1px solid #c0a0e8", borderRadius: 3, color: "#6633aa", cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif" }} title="send to perform">⬡</button>
+                    <button onClick={() => removeClip(c.id)}
+                      style={{ fontSize: 10, padding: "2px 6px", background: "#ffd6d6", border: "1px solid #ffaaaa", borderRadius: 3, color: "#cc2222", cursor: "pointer", fontFamily: "'Trebuchet MS', Arial, sans-serif" }}>×</button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* Style */}
@@ -2772,6 +2886,25 @@ function addClip(id,dataUrl,mediaType){
                       knit style
                     </label>
                   </div>
+                  {posterSelected.knit === false && (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <label style={{ fontSize: 11, color: "#a07040", flex: 1, minWidth: 100 }}>
+                        opacity — {Math.round((posterSelected.opacity ?? 1) * 100)}%
+                        <input type="range" min={0} max={1} step={0.01} value={posterSelected.opacity ?? 1}
+                          onChange={(e) => updatePosterSelected({ opacity: Number(e.target.value) })}
+                          style={{ display: "block", width: "100%", marginTop: 3 }} />
+                      </label>
+                      <label style={{ fontSize: 11, color: "#a07040" }}>blend
+                        <select value={posterSelected.blend ?? "source-over"}
+                          onChange={(e) => updatePosterSelected({ blend: e.target.value })}
+                          style={{ marginTop: 3, display: "block", background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 11 }}>
+                          {["source-over","multiply","screen","overlay","soft-light","hard-light","color-burn","difference","exclusion"].map(b => (
+                            <option key={b} value={b}>{b}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
