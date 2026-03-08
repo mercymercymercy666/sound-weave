@@ -801,7 +801,17 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
     const [lr, lg, lb] = parseColor(L.color);
     const colorStr = `rgba(${lr},${lg},${lb},1)`;
 
-    // V-stroke only — same as poster, no rectangle fill
+    // Square fill at low opacity — background tint under the V
+    ctx.fillStyle = colorStr;
+    ctx.globalAlpha = 0.18;
+    ctx.globalCompositeOperation = "source-over";
+    for (let y = 0; y < rows; y++) {
+      const row = grid01[y]; if (!row) continue;
+      for (let x = 0; x < cols; x++) {
+        if (row[x] === 1) ctx.fillRect(x * cell, y * cell, cell, cell);
+      }
+    }
+    // V-stroke on top — dominant
     ctx.strokeStyle = colorStr;
     ctx.lineWidth = Math.max(1.5, cell * 0.16);
     ctx.lineCap = "round"; ctx.lineJoin = "round";
