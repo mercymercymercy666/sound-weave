@@ -1374,25 +1374,14 @@ export default function App() {
   const [clips, setClips] = useState([]);
   const [clipStyles, setClipStyles] = useState({}); // id -> style name
   const CLIP_STYLES = {
-    normal:   { opacity: 1,    mix: "normal" },
-    multiply: { opacity: 1,    mix: "multiply" },
-    screen:   { opacity: 1,    mix: "screen" },
-    overlay:  { opacity: 1,    mix: "overlay" },
-    ghost:    { opacity: 0.35, mix: "normal" },
-  };
-  const CLIP_WIN_STYLES = {
     normal:    "",
     weave:     "sepia(0.55) contrast(1.35) brightness(0.92)",
-    lace:      "brightness(1.15) contrast(0.8) saturate(0.4)",
-    chart:     "grayscale(1) contrast(2) brightness(1.05)",
     stitch:    "saturate(2) contrast(1.25) hue-rotate(10deg)",
+    chart:     "grayscale(1) contrast(2) brightness(1.05)",
     threshold: "grayscale(1) contrast(100)",
     cmyk:      "brightness(1.3) saturate(1.6) contrast(0.75) hue-rotate(15deg)",
   };
   const clipNextIdRef = useRef(0);
-  const clipWindowsRef = useRef([]); // { winId, label, win }
-  const [clipWinTick, setClipWinTick] = useState(0); // triggers re-render when windows open/close
-  const [winStyles, setWinStyles] = useState({}); // winId -> style name
 
   const [grids, setGrids] = useState(() => {
     const o = {};
@@ -2007,9 +1996,9 @@ document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F')goFS
 window.addEventListener('message',function(e){
   if(!e.data)return;
   if(e.data.type==='frame'){var c=document.getElementById('pc'),b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();}
-  else if(e.data.type==='addClip')addClip(e.data.id,e.data.dataUrl,e.data.mediaType);
+  else if(e.data.type==='addClip')addClip(e.data.id,e.data.dataUrl,e.data.mediaType,e.data.filter||'');
   else if(e.data.type==='removeClip'){var el=document.getElementById('clip-'+e.data.id);if(el)el.remove();}
-  else if(e.data.type==='updateClip'){var el=document.getElementById('clip-'+e.data.id);if(el){if(e.data.opacity!=null)el.style.opacity=e.data.opacity;if(e.data.mix!=null)el.style.mixBlendMode=e.data.mix;}}
+  else if(e.data.type==='updateClip'){var el=document.getElementById('clip-'+e.data.id);if(el){var inn=el.querySelector('img,video');if(inn&&e.data.filter!=null)inn.style.filter=e.data.filter;}}
   else if(e.data.type==='setBg'){document.body.style.background=e.data.color;}
 });
 function makeDraggable(div,resize){
@@ -2022,7 +2011,7 @@ function makeDraggable(div,resize){
   window.addEventListener('mousemove',function(e){if(resizing){var dw=e.clientX-rsx;div.style.width=Math.max(40,rsw+dw)+'px';div.style.height=Math.max(40,rsh+dw*(rsh/rsw))+'px';}});
   window.addEventListener('mouseup',function(){resizing=false;});
 }
-function addClip(id,dataUrl,mediaType){
+function addClip(id,dataUrl,mediaType,filter){
   var clips=document.getElementById('clips');
   var div=document.createElement('div');div.id='clip-'+id;div.className='clip';
   div.style.cssText='left:80px;top:80px;width:280px;height:280px;';
@@ -2033,7 +2022,9 @@ function addClip(id,dataUrl,mediaType){
   var inner;
   if(mediaType==='video'){inner=document.createElement('video');inner.src=dataUrl;inner.autoplay=true;inner.loop=true;inner.muted=true;}
   else{inner=document.createElement('img');inner.src=dataUrl;}
-  inner.style.cssText='display:block;width:100%;height:100%;object-fit:contain;';div.appendChild(inner);
+  inner.style.cssText='display:block;width:100%;height:100%;object-fit:contain;';
+  if(filter)inner.style.filter=filter;
+  div.appendChild(inner);
   var resize=document.createElement('div');resize.className='clip-resize';div.appendChild(resize);
   makeDraggable(div,resize);
   clips.appendChild(div);
@@ -2044,13 +2035,6 @@ function addClip(id,dataUrl,mediaType){
     performWinRef.current = pw;
     setPerformOpen(true);
     // Send any existing clips once window has loaded
-    if (clips.length > 0) {
-      setTimeout(() => {
-        clips.forEach(c => {
-          if (!pw.closed) pw.postMessage({ type: "addClip", id: c.id, dataUrl: c.blobUrl, mediaType: c.type }, "*");
-        });
-      }, 600);
-    }
   }
 
   function closePerformWindow() {
@@ -2065,8 +2049,6 @@ function addClip(id,dataUrl,mediaType){
     const id = clipNextIdRef.current++;
     const clip = { id, name: file.name, blobUrl: url, type };
     setClips(prev => [...prev, clip]);
-    if (performWinRef.current && !performWinRef.current.closed)
-      performWinRef.current.postMessage({ type: "addClip", id, dataUrl: url, mediaType: type }, "*");
   }
 
   function removeClip(id) {
@@ -2075,29 +2057,10 @@ function addClip(id,dataUrl,mediaType){
       performWinRef.current.postMessage({ type: "removeClip", id }, "*");
   }
 
-  function openClipWindow(clip) {
-    const winId = Date.now();
-    const pw = window.open("", `clipwin_${winId}`, "popup=1,width=640,height=640");
-    if (!pw) return;
-    const label = `win ${clipWindowsRef.current.filter(w => !w.win.closed).length + 1}`;
-    pw.document.write(`<!doctype html><html><head><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#000;overflow:hidden;width:100vw;height:100vh}#w{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;transition:filter 0.3s}#w img,#w video{width:100%;height:100%;object-fit:contain;display:block}#fs{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);color:#fff;font:700 15px/1 monospace;letter-spacing:2px;cursor:pointer;z-index:9}#fs:hover{opacity:0.8}</style></head><body><div id="w"></div><div id="fs" onclick="document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();this.remove()">CLICK TO FULLSCREEN</div><script>function setContent(dataUrl,mediaType){var w=document.getElementById('w');w.innerHTML='';var el=document.createElement(mediaType==='video'?'video':'img');el.src=dataUrl;if(mediaType==='video'){el.autoplay=true;el.loop=true;el.muted=true;el.playsInline=true;}w.appendChild(el);}window.addEventListener('message',function(e){if(!e.data)return;if(e.data.type==='setContent')setContent(e.data.dataUrl,e.data.mediaType);else if(e.data.type==='setStyle')document.getElementById('w').style.filter=e.data.filter;});document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F'){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();var o=document.getElementById('fs');if(o)o.remove();}});<\/script></body></html>`);
-    pw.document.close();
-    // Set initial content
-    setTimeout(() => pw.postMessage({ type: "setContent", dataUrl: clip.blobUrl, mediaType: clip.type }, "*"), 200);
-    clipWindowsRef.current = [...clipWindowsRef.current.filter(w => !w.win.closed), { winId, label, win: pw }];
-    setClipWinTick(t => t + 1);
-  }
-
-  function sendToClipWindow(winId, clip) {
-    const entry = clipWindowsRef.current.find(w => w.winId === winId);
-    if (entry && !entry.win.closed)
-      entry.win.postMessage({ type: "setContent", dataUrl: clip.blobUrl, mediaType: clip.type }, "*");
-  }
-
-  function closeAllClipWindows() {
-    clipWindowsRef.current.forEach(w => { if (!w.win.closed) w.win.close(); });
-    clipWindowsRef.current = [];
-    setClipWinTick(t => t + 1);
+  function sendClipToPerform(clip) {
+    if (!performWinRef.current || performWinRef.current.closed) return;
+    const filter = CLIP_STYLES[clipStyles[clip.id] ?? "normal"] ?? "";
+    performWinRef.current.postMessage({ type: "addClip", id: clip.id + Date.now(), dataUrl: clip.blobUrl, mediaType: clip.type, filter }, "*");
   }
 
   const energyAll = useMemo(() => {
@@ -2636,61 +2599,31 @@ function addClip(id,dataUrl,mediaType){
               <input type="file" accept="image/*,video/*" style={{ display: "none" }}
                 onChange={e => { if (e.target.files[0]) { addClip(e.target.files[0]); e.target.value = ""; } }} />
             </label>
-            {(() => { const openWins = clipWindowsRef.current.filter(w => !w.win.closed); return openWins.length > 0 && (
-              <div style={{ marginBottom: 8, padding: "4px 6px", background: "rgba(255,102,204,0.06)", borderRadius: 5, border: "1px solid rgba(255,102,204,0.15)" }}>
-                <div style={{ fontSize: 10, color: "#ff99dd", marginBottom: 4, letterSpacing: 1 }}>open windows</div>
-                {openWins.map(w => (
-                  <div key={w.winId} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
-                    <span style={{ fontSize: 10, color: "#ff99dd", background: "rgba(255,102,204,0.12)", borderRadius: 3, padding: "1px 6px", border: "1px solid rgba(255,102,204,0.3)", flexShrink: 0 }}>{w.label}</span>
-                    <select
-                      value={winStyles[w.winId] ?? "normal"}
-                      onChange={e => {
-                        const s = e.target.value;
-                        setWinStyles(prev => ({ ...prev, [w.winId]: s }));
-                        if (!w.win.closed) w.win.postMessage({ type: "setStyle", filter: CLIP_WIN_STYLES[s] }, "*");
-                      }}
-                      style={{ flex: 1, background: "#1a0033", color: "#ff99dd", border: "1px solid rgba(255,102,204,0.3)", borderRadius: 3, fontSize: 9, padding: "1px 2px", cursor: "pointer" }}
-                    >
-                      {Object.keys(CLIP_WIN_STYLES).map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                ))}
-                <button onClick={() => { closeAllClipWindows(); }} style={{ ...btn(false), fontSize: 10, padding: "1px 6px", color: "#ff6666", borderColor: "#ff444466", marginTop: 2 }}>close all</button>
-              </div>
-            ); })()}
             {clips.length === 0 && <div style={{ fontSize: 11, color: "rgba(200,169,110,0.4)", fontStyle: "italic" }}>upload images or videos</div>}
-            {clips.map(c => {
-              const openWins = clipWindowsRef.current.filter(w => !w.win.closed);
-              return (
-                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4, background: "rgba(153,51,255,0.08)", borderRadius: 5, padding: "4px 6px", flexWrap: "wrap" }}>
-                  {c.type === "image"
-                    ? <img src={c.blobUrl} style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)", flexShrink: 0 }} />
-                    : <div style={{ width: 28, height: 28, background: "#1a0033", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>▶</div>
-                  }
-                  <span style={{ flex: 1, fontSize: 10, color: "#cc99ff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{c.name}</span>
-                  <button onClick={() => openClipWindow(c)} style={{ ...btn(false), borderColor: "#ff66cc", color: "#ff99dd", padding: "2px 5px", fontSize: 10 }} title="open in new popup">↗</button>
-                  {openWins.map(w => (
-                    <button key={w.winId} onClick={() => sendToClipWindow(w.winId, c)} style={{ ...btn(false), borderColor: "#ff66cc", color: "#ff99dd", padding: "2px 5px", fontSize: 9 }} title={`send to ${w.label}`}>{w.label}</button>
-                  ))}
-                  <button onClick={() => { if (performWinRef.current && !performWinRef.current.closed) performWinRef.current.postMessage({ type: "addClip", id: c.id + Date.now(), dataUrl: c.blobUrl, mediaType: c.type }, "*"); }}
-                    style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", padding: "2px 5px", fontSize: 10 }} title="send to perform">⬡</button>
-                  <select
-                    value={clipStyles[c.id] ?? "normal"}
-                    onChange={e => {
-                      const s = e.target.value;
-                      setClipStyles(prev => ({ ...prev, [c.id]: s }));
-                      const preset = CLIP_STYLES[s];
-                      if (performWinRef.current && !performWinRef.current.closed)
-                        performWinRef.current.postMessage({ type: "updateClip", id: c.id, opacity: preset.opacity, mix: preset.mix }, "*");
-                    }}
-                    style={{ background: "#1a0033", color: "#cc99ff", border: "1px solid rgba(153,51,255,0.4)", borderRadius: 3, fontSize: 9, padding: "1px 2px", cursor: "pointer" }}
-                  >
-                    {Object.keys(CLIP_STYLES).map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <button onClick={() => removeClip(c.id)} style={{ ...btn(false), padding: "2px 5px", fontSize: 10, color: "#ff6666", borderColor: "#ff444466" }}>×</button>
-                </div>
-              );
-            })}
+            {clips.map(c => (
+              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4, background: "rgba(153,51,255,0.08)", borderRadius: 5, padding: "4px 6px", flexWrap: "wrap" }}>
+                {c.type === "image"
+                  ? <img src={c.blobUrl} style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)", flexShrink: 0 }} />
+                  : <div style={{ width: 28, height: 28, background: "#1a0033", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>▶</div>
+                }
+                <span style={{ flex: 1, fontSize: 10, color: "#cc99ff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{c.name}</span>
+                <select
+                  value={clipStyles[c.id] ?? "normal"}
+                  onChange={e => {
+                    const s = e.target.value;
+                    setClipStyles(prev => ({ ...prev, [c.id]: s }));
+                    if (performWinRef.current && !performWinRef.current.closed)
+                      performWinRef.current.postMessage({ type: "updateClip", id: c.id, filter: CLIP_STYLES[s] }, "*");
+                  }}
+                  style={{ background: "#1a0033", color: "#cc99ff", border: "1px solid rgba(153,51,255,0.4)", borderRadius: 3, fontSize: 9, padding: "1px 2px", cursor: "pointer" }}
+                >
+                  {Object.keys(CLIP_STYLES).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <button onClick={() => sendClipToPerform(c)}
+                  style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", padding: "2px 5px", fontSize: 10 }} title="send to perform">⬡</button>
+                <button onClick={() => removeClip(c.id)} style={{ ...btn(false), padding: "2px 5px", fontSize: 10, color: "#ff6666", borderColor: "#ff444466" }}>×</button>
+              </div>
+            ))}
           </div>
 
           {/* Style */}
