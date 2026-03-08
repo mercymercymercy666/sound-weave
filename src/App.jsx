@@ -45,6 +45,31 @@ function cellRand(x, y) {
 // - 3D edge highlights (bright top/left, dark bottom/right) show which strip is on top
 // - Size variation uses a bimodal distribution → mix of thin threads and thick strips
 //
+
+// Composites bgImg onto ctx clipped to the provided stitch-shape Path2D.
+// This makes the image look like part of the fabric texture instead of a photographic overlay.
+function compositeImgThrough(ctx, bgImg, W, H, path, { blend = "multiply", opacity = 0.75, lineWidth = 1, filled = false } = {}) {
+  if (!bgImg || !W || !H) return;
+  try {
+    const off = document.createElement("canvas"); off.width = W; off.height = H;
+    const ox = off.getContext("2d");
+    const iw = bgImg.naturalWidth || bgImg.width || W;
+    const ih = bgImg.naturalHeight || bgImg.height || H;
+    const scale = Math.max(W / iw, H / ih);
+    ox.imageSmoothingEnabled = true;
+    ox.drawImage(bgImg, (W - iw * scale) / 2, (H - ih * scale) / 2, iw * scale, ih * scale);
+    ox.globalCompositeOperation = "destination-in";
+    if (filled) { ox.fillStyle = "rgba(255,255,255,1)"; ox.fill(path); }
+    ox.lineWidth = lineWidth; ox.lineCap = "round"; ox.lineJoin = "round";
+    ox.strokeStyle = "rgba(255,255,255,1)"; if (!filled) ox.stroke(path);
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.globalCompositeOperation = blend;
+    ctx.drawImage(off, 0, 0);
+    ctx.restore();
+  } catch(_) {}
+}
+
 function drawWeave(canvas, grids, layers, bgImg, cell, opts = {}) {
   const {
     rows, cols,
@@ -67,13 +92,19 @@ function drawWeave(canvas, grids, layers, bgImg, cell, opts = {}) {
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = true;
 
-  // Background: dark base + dimmed image in gaps
+  // Background: dark base
   ctx.fillStyle = "#1c1c1c";
   ctx.fillRect(0, 0, W, H);
+  // bgImg composited through cell-shaped mask (knit-fabric look, not photographic overlay)
   if (bgImg) {
-    ctx.globalAlpha = imageOpacity * 0.45;
-    ctx.drawImage(bgImg, 0, 0, W, H);
-    ctx.globalAlpha = 1;
+    const p = new Path2D();
+    const cs = cell - gap;
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const xp = x * cell + gap / 2, yp = y * cell + gap / 2;
+      const r = borderRadius > 0 ? Math.min(borderRadius * cs * 0.012, cs / 2) : 0;
+      if (r > 0) { p.roundRect(xp, yp, cs, cs, r); } else { p.rect(xp, yp, cs, cs); }
+    }
+    compositeImgThrough(ctx, bgImg, W, H, p, { blend: "screen", opacity: imageOpacity * 0.8, filled: true });
   }
 
   // Per-CELL independent size (avoids stripe artifacts from per-row/col sizing)
@@ -276,9 +307,13 @@ function drawLace(canvas, grids, layers, bgImg, cell, opts = {}) {
   ctx.fillStyle = "#0d0d0d";
   ctx.fillRect(0, 0, W, H);
   if (bgImg) {
-    ctx.globalAlpha = imageOpacity * 0.35;
-    ctx.drawImage(bgImg, 0, 0, W, H);
-    ctx.globalAlpha = 1;
+    const p = new Path2D();
+    const r = Math.max(2, cell * 0.4);
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const cx = x * cell + cell / 2, cy = y * cell + cell / 2;
+      p.moveTo(cx + r, cy); p.arc(cx, cy, r, 0, Math.PI * 2);
+    }
+    compositeImgThrough(ctx, bgImg, W, H, p, { blend: "screen", opacity: imageOpacity * 0.85, filled: true });
   }
 
   const [wpR, wpG, wpB] = parseColor(warpColor);
@@ -416,9 +451,14 @@ function drawChart(canvas, grids, layers, bgImg, cell, opts = {}) {
   ctx.fillStyle = "#060606";
   ctx.fillRect(0, 0, W, H);
   if (bgImg) {
-    ctx.globalAlpha = imageOpacity;
-    ctx.drawImage(bgImg, 0, 0, W, H);
-    ctx.globalAlpha = 1;
+    const sw = Math.max(2, (cell - gap) * (0.7 + sizeVariation * 0.2));
+    const p = new Path2D();
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const xp = x * cell + (cell - sw) / 2, yp = y * cell + (cell - sw) / 2;
+      const r = borderRadius > 0 ? Math.min(borderRadius * sw * 0.012, sw / 2) : 0;
+      if (r > 0) { p.roundRect(xp, yp, sw, sw, r); } else { p.rect(xp, yp, sw, sw); }
+    }
+    compositeImgThrough(ctx, bgImg, W, H, p, { blend: "screen", opacity: imageOpacity * 0.9, filled: true });
   }
 
   const [wpR, wpG, wpB] = parseColor(warpColor);
@@ -671,35 +711,39 @@ function drawNotationAtRow(ctx, bins, energy01, cursorY, color, alpha, cell, col
 
 // Draws a parchment/twilight knit-stitch pattern — V-shapes per cell, per-layer color fills
 function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
-  const { rows, cols, imageOpacity = 0.3, maskImg = null, invert = false } = opts;
+  const { rows, cols, maskImg = null, invert = false } = opts;
   canvas.width = cols * cell;
   canvas.height = rows * cell;
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = true;
 
+  const W = cols * cell, H = rows * cell;
   ctx.fillStyle = invert ? "#16121e" : "#fdf3e7";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
 
+  // Build V-stitch path for all cells (shared for bgImg masking and base texture)
+  const vPath = new Path2D();
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    const cx = x * cell, cy = y * cell;
+    vPath.moveTo(cx + cell * 0.12, cy + cell * 0.10);
+    vPath.lineTo(cx + cell * 0.50, cy + cell * 0.88);
+    vPath.lineTo(cx + cell * 0.88, cy + cell * 0.10);
+  }
+
+  // bgImg composited through V-stitch mask (same technique as poster)
   if (bgImg) {
-    ctx.globalAlpha = imageOpacity;
-    ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
-    ctx.globalAlpha = 1;
+    compositeImgThrough(ctx, bgImg, W, H, vPath, {
+      blend: invert ? "screen" : "multiply",
+      opacity: invert ? 0.65 : 0.75,
+      lineWidth: Math.max(1.5, cell * 0.13),
+    });
   }
 
-  // Base V-texture for every cell
-  ctx.beginPath();
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const cx = x * cell, cy = y * cell;
-      ctx.moveTo(cx + cell * 0.12, cy + cell * 0.10);
-      ctx.lineTo(cx + cell * 0.50, cy + cell * 0.88);
-      ctx.lineTo(cx + cell * 0.88, cy + cell * 0.10);
-    }
-  }
+  // Base V-texture
   ctx.strokeStyle = invert ? "rgba(220,185,130,0.18)" : "rgba(140,95,40,0.20)";
   ctx.lineWidth = Math.max(0.7, cell * 0.09);
   ctx.lineCap = "round"; ctx.lineJoin = "round";
-  ctx.stroke();
+  ctx.stroke(vPath);
 
   const pad = Math.max(1, cell * 0.10);
 
@@ -809,9 +853,6 @@ async function imageToGrid01(file, rows, cols, { threshold = 0.5, invert = false
 
 // ---- AUDIO LAYER ENGINE ----
 const BAND_RANGES = { sub:[0.00,0.03], bass:[0.03,0.10], lmid:[0.10,0.25], mid:[0.25,0.50], hi:[0.50,0.80], air:[0.80,1.00] };
-const BAND_KEYS = ["all","sub","bass","lmid","mid","hi","air"];
-const BAND_LABELS = { all:"all", sub:"sub", bass:"bass", lmid:"lmid", mid:"mid", hi:"hi", air:"air" };
-
 function computeBandEnergies(bins) {
   const all = (() => { let s=0; for(let i=0;i<bins.length;i++) s+=bins[i]; return clamp(Math.pow(s/bins.length/255,0.7),0,1); })();
   const boost = (v, b, p) => clamp(Math.pow(v*b, p), 0, 1);
@@ -1174,19 +1215,31 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
   }
 }
 
-const LAYER_COLORS = { A: "#ff3333", B: "#0088ff", C: "#00c878", D: "#ff8c00", F: "#00d4d4", G: "#ff66cc", H: "#b0e050" };
+// Default per-band colors: A=sun (red→yellow), others=shades of their base hue
+const DEFAULT_LAYER_BAND_COLORS = {
+  A: { all:"#ff5500", sub:"#ff1100", bass:"#ff4400", lmid:"#ff7700", mid:"#ffaa00", hi:"#ffcc00", air:"#ffe066" },
+  B: { all:"#0088ff", sub:"#003380", bass:"#0055cc", lmid:"#0077ff", mid:"#0088ff", hi:"#44aaff", air:"#88ccff" },
+  C: { all:"#00c878", sub:"#004422", bass:"#007744", lmid:"#00aa55", mid:"#00c878", hi:"#44dd99", air:"#88ffcc" },
+  D: { all:"#ff8c00", sub:"#883300", bass:"#bb5500", lmid:"#ee7700", mid:"#ff8c00", hi:"#ffaa33", air:"#ffcc77" },
+  F: { all:"#00d4d4", sub:"#003333", bass:"#006666", lmid:"#009999", mid:"#00d4d4", hi:"#44eeee", air:"#88ffff" },
+  G: { all:"#ff66cc", sub:"#660033", bass:"#990066", lmid:"#cc3399", mid:"#ff66cc", hi:"#ff99dd", air:"#ffccee" },
+  H: { all:"#b0e050", sub:"#334400", bass:"#667700", lmid:"#99aa00", mid:"#b0e050", hi:"#ccee77", air:"#ddeebb" },
+};
 const IDS = ["A", "B", "C", "D", "F", "G", "H"];
 
 export default function App() {
+  const [layerColors, setLayerColors] = useState(DEFAULT_LAYER_BAND_COLORS);
+
   const LAYERS = useMemo(() => [
-    { id: "A", name: "MIC",     type: "mic",  color: "rgba(255,60,60,1)"   },
-    { id: "B", name: "AUDIO 1", type: "file", color: "rgba(0,140,255,1)"   },
-    { id: "C", name: "AUDIO 2", type: "file", color: "rgba(0,200,120,1)"   },
-    { id: "D", name: "AUDIO 3", type: "file", color: "rgba(255,160,0,1)"   },
-    { id: "F", name: "AUDIO 4", type: "file", color: "rgba(0,212,212,1)"   },
-    { id: "G", name: "AUDIO 5", type: "file", color: "rgba(255,102,204,1)" },
-    { id: "H", name: "AUDIO 6", type: "file", color: "rgba(176,224,80,1)"  },
-  ], []);
+    { id: "A", name: "MIC",     type: "mic",  color: layerColors.A[layerBand.A ?? "all"] },
+    { id: "B", name: "AUDIO 1", type: "file", color: layerColors.B[layerBand.B ?? "all"] },
+    { id: "C", name: "AUDIO 2", type: "file", color: layerColors.C[layerBand.C ?? "all"] },
+    { id: "D", name: "AUDIO 3", type: "file", color: layerColors.D[layerBand.D ?? "all"] },
+    { id: "F", name: "AUDIO 4", type: "file", color: layerColors.F[layerBand.F ?? "all"] },
+    { id: "G", name: "AUDIO 5", type: "file", color: layerColors.G[layerBand.G ?? "all"] },
+    { id: "H", name: "AUDIO 6", type: "file", color: layerColors.H[layerBand.H ?? "all"] },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [layerColors, layerBand]);
 
   const [cols, setCols] = useState(60);
   const [rows, setRows] = useState(80);
@@ -1521,35 +1574,28 @@ export default function App() {
     ovParamRef.current = { ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode };
   }, [ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode]);
 
-  // Overlay RAF loop — bg canvas sits BEHIND main canvas (stitches on top), fg canvas is for cursor only
+  // Overlay RAF loop — draws overlay + cursor on overlayCanvasRef (on top of stitches, blend modes let stitches show through)
   useEffect(() => {
     let raf;
     const step = () => {
-      const bgc = overlayBgCanvasRef.current; // behind stitches
-      const oc  = overlayCanvasRef.current;   // cursor preview (in front)
-      const sc  = canvasRef.current;
-      const mc  = overlayMaskRef.current;
-      const me  = overlayMediaRef.current;
+      const oc = overlayCanvasRef.current;
+      const sc = canvasRef.current;
+      const mc = overlayMaskRef.current;
+      const me = overlayMediaRef.current;
       const { ovType: ot, ovBlend: blend, ovOpacity: opacity, ovActiveTool: tool, ovBrushSize: bs } = ovParamRef.current;
       if (!oc || !sc) { raf = requestAnimationFrame(step); return; }
       const W = sc.width, H = sc.height;
-      // Sync sizes
       if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
-      // Render overlay image/video to bg canvas (stitches will be drawn on top by main canvas)
-      if (bgc) {
-        if (bgc.width !== W || bgc.height !== H) { bgc.width = W; bgc.height = H; }
-        const bgCtx = bgc.getContext("2d");
-        bgCtx.clearRect(0, 0, W, H);
-        if (ot && me && mc) drawMediaOverlay(bgc, me, mc, opacity, blend);
-      }
-      // Render cursor preview to fg canvas
       const ctx = oc.getContext("2d");
       ctx.clearRect(0, 0, W, H);
+      // Draw overlay (on top of stitches — blend modes let stitches show through)
+      if (ot && me && mc) drawMediaOverlay(oc, me, mc, opacity, blend);
+      // Draw brush cursor on top
       if (tool === "brush" && ot && ovMouseRef.current.over) {
         const cs = clamp(cell, 4, 30);
         ctx.save();
         ctx.strokeStyle = ovParamRef.current.ovBrushMode === "erase" ? "rgba(255,80,80,0.85)" : "rgba(57,255,20,0.85)";
-        ctx.lineWidth = 1.5; ctx.setLineDash([3,3]);
+        ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
         ctx.beginPath(); ctx.arc(ovMouseRef.current.x, ovMouseRef.current.y, bs * cs, 0, Math.PI * 2); ctx.stroke();
         ctx.setLineDash([]); ctx.restore();
       }
@@ -1975,7 +2021,6 @@ export default function App() {
             {/* Canvas stack: overlayBg (behind) → canvas → notation → cursor */}
             <div style={{ position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)` }}>
               {/* overlay image/video — BEHIND stitches */}
-              <canvas ref={overlayBgCanvasRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
               {/* main stitch canvas */}
               <canvas ref={canvasRef}
                 onMouseDown={(e) => { if (ovActiveTool === "grid") { setMouseDown(true); paintAtEvent(e); } }}
@@ -2038,8 +2083,8 @@ export default function App() {
               <span style={muted}>energy</span>
               {LAYERS.map((L) => (
                 <span key={L.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
-                  <span style={{ color: LAYER_COLORS[L.id], fontWeight: 700 }}>{L.id}</span>
-                  <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: LAYER_COLORS[L.id], borderRadius: 3, boxShadow: `0 0 4px ${LAYER_COLORS[L.id]}`, transition: "width 0.1s" }} />
+                  <span style={{ color: L.color, fontWeight: 700 }}>{L.id}</span>
+                  <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: L.color, borderRadius: 3, boxShadow: `0 0 4px ${L.color}`, transition: "width 0.1s" }} />
                   <span style={muted}>{energyAll[L.id]}%</span>
                 </span>
               ))}
@@ -2061,11 +2106,11 @@ export default function App() {
               <div key={L.id} style={{ border: `1px solid ${ng20}`, borderRadius: 9, padding: 9, marginBottom: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <b style={{ color: LAYER_COLORS[L.id], fontSize: 14, letterSpacing: 1 }}>{L.id}</b>
+                    <b style={{ color: L.color, fontSize: 14, letterSpacing: 1 }}>{L.id}</b>
                     <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{L.name}</span>
                   </span>
                   <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: LAYER_COLORS[L.id], borderRadius: 3, transition: "width 0.1s" }} />
+                    <span style={{ display: "inline-block", width: Math.max(2, energyAll[L.id] * 0.5), height: 5, background: L.color, borderRadius: 3, transition: "width 0.1s" }} />
                     <span style={muted}>{energyAll[L.id]}%</span>
                   </span>
                 </div>
@@ -2074,30 +2119,32 @@ export default function App() {
                     <button key={m} onClick={() => setModes((s) => ({ ...s, [L.id]: m }))} style={btn(modes[L.id] === m)}>{m}</button>
                   ))}
                 </div>
-                {/* Frequency band selector + live mini spectrum */}
+                {/* Frequency band selector + live mini spectrum + color pickers */}
                 <div style={{ display: "flex", gap: 4, alignItems: "flex-end", marginBottom: 6 }}>
-                  {/* "all" button */}
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                    <div style={{ width: 22, height: 18, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-                      <div style={{ width: 18, height: `${Math.max(3, (audioMap[L.id]?.energy ?? 0) * 100)}%`, background: LAYER_COLORS[L.id], borderRadius: 2, maxHeight: 18 }} />
-                    </div>
-                    <button onClick={() => setLayerBand(b => ({ ...b, [L.id]: "all" }))}
-                      style={{ padding: "1px 4px", fontSize: 9, borderRadius: 4, cursor: "pointer", border: `1px solid ${layerBand[L.id] === "all" ? LAYER_COLORS[L.id] : "rgba(255,255,255,0.15)"}`, background: layerBand[L.id] === "all" ? LAYER_COLORS[L.id] : "transparent", color: layerBand[L.id] === "all" ? "#000" : "rgba(255,255,255,0.45)" }}>
-                      all
-                    </button>
-                  </div>
-                  <div style={{ width: 1, height: 30, background: "rgba(255,255,255,0.1)" }} />
-                  {/* Per-band buttons with live bars */}
-                  {["sub","bass","lmid","mid","hi","air"].map(bk => (
-                    <div key={bk} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                      <div style={{ width: 22, height: 18, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-                        <div style={{ width: 16, height: `${Math.max(3, (audioMap[L.id]?.bandsRef.current[bk] ?? 0) * 100)}%`, background: LAYER_COLORS[L.id], borderRadius: 2, maxHeight: 18, opacity: 0.8 }} />
+                  {/* "all" column */}
+                  {[["all", layerColors[L.id].all, (audioMap[L.id]?.energy ?? 0)],
+                    ...["sub","bass","lmid","mid","hi","air"].map(bk => [bk, layerColors[L.id][bk], (audioMap[L.id]?.bandsRef.current[bk] ?? 0)])
+                  ].map(([bk, col, lvl], i) => (
+                    <React.Fragment key={bk}>
+                      {i === 1 && <div style={{ width: 1, height: 44, background: "rgba(255,255,255,0.1)", alignSelf: "center" }} />}
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                        {/* Live bar */}
+                        <div style={{ width: 20, height: 18, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+                          <div style={{ width: 14, height: `${Math.max(8, lvl * 100)}%`, background: col, borderRadius: 2, maxHeight: 18, transition: "height 0.05s" }} />
+                        </div>
+                        {/* Band select button */}
+                        <button onClick={() => setLayerBand(b => ({ ...b, [L.id]: bk }))}
+                          style={{ padding: "1px 3px", fontSize: 8, borderRadius: 4, cursor: "pointer", border: `1px solid ${layerBand[L.id] === bk ? col : "rgba(255,255,255,0.15)"}`, background: layerBand[L.id] === bk ? col : "transparent", color: layerBand[L.id] === bk ? "#000" : "rgba(255,255,255,0.45)", lineHeight: 1.4 }}>
+                          {bk}
+                        </button>
+                        {/* Color picker dot */}
+                        <label style={{ position: "relative", width: 10, height: 10, borderRadius: "50%", background: col, border: "1px solid rgba(255,255,255,0.25)", cursor: "pointer", display: "block", flexShrink: 0 }}>
+                          <input type="color" value={col}
+                            onChange={(e) => setLayerColors(lc => ({ ...lc, [L.id]: { ...lc[L.id], [bk]: e.target.value } }))}
+                            style={{ position: "absolute", opacity: 0, width: 1, height: 1, pointerEvents: "none" }} />
+                        </label>
                       </div>
-                      <button onClick={() => setLayerBand(b => ({ ...b, [L.id]: bk }))}
-                        style={{ padding: "1px 4px", fontSize: 9, borderRadius: 4, cursor: "pointer", border: `1px solid ${layerBand[L.id] === bk ? LAYER_COLORS[L.id] : "rgba(255,255,255,0.15)"}`, background: layerBand[L.id] === bk ? LAYER_COLORS[L.id] : "transparent", color: layerBand[L.id] === bk ? "#000" : "rgba(255,255,255,0.45)" }}>
-                        {bk}
-                      </button>
-                    </div>
+                    </React.Fragment>
                   ))}
                 </div>
                 {L.type === "file" && (
