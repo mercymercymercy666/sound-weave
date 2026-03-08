@@ -2162,6 +2162,8 @@ export default function App() {
                   ? <button onClick={closePerformWindow} style={{ ...btn(true), background: "#6600cc", borderColor: "#9933ff", color: "#fff", boxShadow: "0 0 10px #9933ff" }}>✕ perform</button>
                   : <button onClick={openPerformWindow} style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", boxShadow: "0 0 6px #9933ff44" }}>⬡ perform</button>
                 }
+                <button onClick={() => window.open(location.href, "_blank", "popup=1,width=1280,height=900")}
+                  style={{ ...btn(false), borderColor: "#ff66cc", color: "#ff99dd", boxShadow: "0 0 6px #ff66cc44" }}>+ new window</button>
                 <button onClick={() => setPosterOpen(o => !o)}
                   style={{ ...btn(posterOpen), borderColor: posterOpen ? NG : "#c8a96e", color: posterOpen ? "#000" : "#c8a96e" }}>
                   poster {posterOpen ? "▶" : "◀"}
