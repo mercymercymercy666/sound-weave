@@ -761,7 +761,9 @@ function drawNotationAtRow(ctx, bins, energy01, cursorY, color, alpha, cell, col
 
 // Draws a parchment/twilight knit-stitch pattern — V-shapes per cell, per-layer color fills
 function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
-  const { rows, cols, maskImg = null, invert = false } = opts;
+  const { rows, cols, maskImg = null, invert = false,
+    warpColor = "#c8a96e", cc = "#e8d5b7",
+    colorAlpha = 0.85, ccAlpha = 0.18 } = opts;
   canvas.width = cols * cell;
   canvas.height = rows * cell;
   const ctx = canvas.getContext("2d");
@@ -795,15 +797,15 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   ctx.stroke(vPath);
 
+  const [wpR, wpG, wpB] = parseColor(warpColor);
+  const [ccR, ccG, ccB] = parseColor(cc);
   for (const L of layers) {
     const grid01 = grids[L.id];
     if (!grid01) continue;
-    const [lr, lg, lb] = parseColor(L.color);
-    const colorStr = `rgba(${lr},${lg},${lb},1)`;
 
-    // Square fill at low opacity — background tint under the V
-    ctx.fillStyle = colorStr;
-    ctx.globalAlpha = 0.18;
+    // Square fill at low opacity — use cc color
+    ctx.fillStyle = `rgb(${ccR},${ccG},${ccB})`;
+    ctx.globalAlpha = ccAlpha;
     ctx.globalCompositeOperation = "source-over";
     for (let y = 0; y < rows; y++) {
       const row = grid01[y]; if (!row) continue;
@@ -811,12 +813,12 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
         if (row[x] === 1) ctx.fillRect(x * cell, y * cell, cell, cell);
       }
     }
-    // V-stroke on top — dominant
-    ctx.strokeStyle = colorStr;
+    // V-stroke on top — use warpColor (MC)
+    ctx.strokeStyle = `rgb(${wpR},${wpG},${wpB})`;
     ctx.lineWidth = Math.max(1.5, cell * 0.16);
     ctx.lineCap = "round"; ctx.lineJoin = "round";
     ctx.globalCompositeOperation = bgImg ? "multiply" : "source-over";
-    ctx.globalAlpha = bgImg ? 0.75 : 0.85;
+    ctx.globalAlpha = bgImg ? 0.75 : colorAlpha;
     ctx.beginPath();
     for (let y = 0; y < rows; y++) {
       const row = grid01[y]; if (!row) continue;
