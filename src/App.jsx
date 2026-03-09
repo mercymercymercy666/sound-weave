@@ -1191,7 +1191,7 @@ function drawStaveGroup(ctx, centerRow, gridW, cell, color, seed) {
   ctx.globalAlpha = 1; ctx.setLineDash([]);
 }
 
-function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInvert, staveCount, notationSeed, bgImg = null, sourceCanvas = null }) {
+function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInvert, staveCount, notationSeed, bgImg = null, sourceCanvas = null, posterLayerAlpha = 1 }) {
   const W = gridW * cell; const H = gridH * cell;
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
@@ -1244,11 +1244,12 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
     const pad = Math.max(1, cell * 0.10);
     for (const L of fabricLayers) {
       const { grid01, color, alpha } = L; if (!grid01) continue;
-      ctx.fillStyle = color; ctx.globalAlpha = alpha * 0.45;
+      const la = alpha * posterLayerAlpha;
+      ctx.fillStyle = color; ctx.globalAlpha = la * 0.45;
       for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++)
         if (grid01[y]?.[x] === 1) ctx.fillRect(x*cell+pad, y*cell+pad, cell-pad*2, cell-pad*2);
       ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.2, cell*0.14);
-      ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.globalAlpha = alpha;
+      ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.globalAlpha = la;
       ctx.beginPath();
       for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
         if (grid01[y]?.[x] === 1) {
@@ -2220,6 +2221,10 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   const [posterOvOpacity, setPosterOvOpacity] = useState(0.85);
   const [posterOvBlend, setPosterOvBlend] = useState("multiply");
   const [posterOvVideoPlaying, setPosterOvVideoPlaying] = useState(false);
+  const [posterLayerAlpha, setPosterLayerAlpha] = useState(1);
+  const [isPosterRecording, setIsPosterRecording] = useState(false);
+  const posterMediaRecorderRef = useRef(null);
+  const posterRecordedChunksRef = useRef([]);
 
   const posterCanvasRef   = useRef(null);
   const posterParamRef    = useRef({});
@@ -2235,12 +2240,12 @@ function addClip(id,dataUrl,mediaType,filter,mix){
     posterParamRef.current = {
       ...posterParamRef.current,
       texts: posterTexts, selectedId: posterSelectedId,
-      cell: posterCell, staveCount, notationSeed, fabricInvert,
+      cell: posterCell, staveCount, notationSeed, fabricInvert, posterLayerAlpha,
       activeTool: posterActiveTool, brushSize: posterBrushSize, brushMode: posterBrushMode,
       overlayType: posterOvType, overlayOpacity: posterOvOpacity, overlayBlend: posterOvBlend,
       dirty: true,
     };
-  }, [posterTexts, posterSelectedId, posterCell, staveCount, notationSeed, fabricInvert,
+  }, [posterTexts, posterSelectedId, posterCell, staveCount, notationSeed, fabricInvert, posterLayerAlpha,
       posterActiveTool, posterBrushSize, posterBrushMode, posterOvType, posterOvOpacity, posterOvBlend]);
 
   // Poster RAF loop
@@ -2269,8 +2274,8 @@ function addClip(id,dataUrl,mediaType,filter,mix){
         const { cell: cs = 5, staveCount: sc = 8, notationSeed: ns = 42,
           fabricLayers, fabricInvert: fi = false, texts: ts = [], selectedId: sid,
           gridW: gw = colsRef.current, gridH: gh = rowsRef.current,
-          overlayBlend: blend, overlayOpacity: opacity } = posterParamRef.current;
-        drawPoster(c, { gridW: gw, gridH: gh, cell: cs, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns, bgImg: bgImgRef.current, sourceCanvas: canvasRef.current });
+          overlayBlend: blend, overlayOpacity: opacity, posterLayerAlpha: pla = 1 } = posterParamRef.current;
+        drawPoster(c, { gridW: gw, gridH: gh, cell: cs, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns, bgImg: bgImgRef.current, sourceCanvas: canvasRef.current, posterLayerAlpha: pla });
         if (ot && posterMediaRef.current && posterMaskRef.current)
           drawMediaOverlay(c, posterMediaRef.current, posterMaskRef.current, opacity, blend);
         else if (!ot && overlayMediaRef.current) {
@@ -2352,9 +2357,9 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   function exportPosterPNG() {
     const { cell: cs = 5, staveCount: sc = 8, notationSeed: ns = 42, fabricLayers, fabricInvert: fi = false,
       texts: ts = [], gridW: gw = cols, gridH: gh = rows,
-      overlayType: ot, overlayOpacity: opacity, overlayBlend: blend } = posterParamRef.current;
+      overlayType: ot, overlayOpacity: opacity, overlayBlend: blend, posterLayerAlpha: pla = 1 } = posterParamRef.current;
     const print = document.createElement("canvas");
-    drawPoster(print, { gridW: gw, gridH: gh, cell: cs * 3, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns, bgImg: bgImgRef.current, sourceCanvas: canvasRef.current });
+    drawPoster(print, { gridW: gw, gridH: gh, cell: cs * 3, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns, bgImg: bgImgRef.current, sourceCanvas: canvasRef.current, posterLayerAlpha: pla });
     if (ot && posterMediaRef.current && posterMaskRef.current) {
       const scaledMask = document.createElement("canvas");
       scaledMask.width = print.width; scaledMask.height = print.height;
@@ -2371,6 +2376,34 @@ function addClip(id,dataUrl,mediaType,filter,mix){
       out = inv;
     }
     const a = document.createElement("a"); a.download = "knit-poster.png"; a.href = out.toDataURL("image/png"); a.click();
+  }
+
+  function startPosterRecording() {
+    const c = posterCanvasRef.current; if (!c) return;
+    posterRecordedChunksRef.current = [];
+    const stream = c.captureStream(30);
+    const mimeType = MediaRecorder.isTypeSupported("video/mp4;codecs=avc1")
+      ? "video/mp4;codecs=avc1"
+      : MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+        ? "video/webm;codecs=vp9" : "video/webm";
+    const mr = new MediaRecorder(stream, { mimeType });
+    mr.ondataavailable = (e) => { if (e.data.size > 0) posterRecordedChunksRef.current.push(e.data); };
+    mr.onstop = () => {
+      const isMP4 = mimeType.startsWith("video/mp4");
+      const blob = new Blob(posterRecordedChunksRef.current, { type: mimeType });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `knit-poster.${isMP4 ? "mp4" : "webm"}`;
+      a.click();
+    };
+    mr.start();
+    posterMediaRecorderRef.current = mr;
+    setIsPosterRecording(true);
+  }
+
+  function stopPosterRecording() {
+    posterMediaRecorderRef.current?.stop();
+    setIsPosterRecording(false);
   }
 
   // shared style tokens
@@ -2859,6 +2892,10 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                     style={{ padding: "5px 12px", borderRadius: 8, fontSize: 11, cursor: "pointer", fontWeight: 600, border: "1px solid #c8a96e", background: "transparent", color: "#c8a96e" }}>
                     export png
                   </button>
+                  {isPosterRecording
+                    ? <button onClick={stopPosterRecording} style={{ padding: "5px 12px", borderRadius: 8, fontSize: 11, cursor: "pointer", fontWeight: 600, border: "1px solid #ff2222", background: "#ff2222", color: "#fff" }}>stop rec</button>
+                    : <button onClick={startPosterRecording} style={{ padding: "5px 12px", borderRadius: 8, fontSize: 11, cursor: "pointer", fontWeight: 600, border: "1px solid #c8a96e", background: "transparent", color: "#c8a96e" }}>record</button>
+                  }
                   <button onClick={() => setPosterOpen(false)}
                     style={{ padding: "5px 10px", borderRadius: 8, fontSize: 11, cursor: "pointer", border: "1px solid #3a2e20", background: "transparent", color: "#a07040" }}>
                     ✕
@@ -2950,6 +2987,12 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                 <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11, color: "#c8a96e", cursor: "pointer", paddingTop: 14 }}>
                   <input type="checkbox" checked={fabricInvert} onChange={(e) => setFabricInvert(e.target.checked)} />
                   dark mode
+                </label>
+                <label style={{ fontSize: 11, color: "#a07040", paddingTop: 8 }}>
+                  sound layer opacity — {Math.round(posterLayerAlpha * 100)}%
+                  <input type="range" min={0} max={1} step={0.01} value={posterLayerAlpha}
+                    onChange={e => setPosterLayerAlpha(Number(e.target.value))}
+                    style={{ display: "block", width: "100%", marginTop: 3 }} />
                 </label>
               </div>
             </div>
