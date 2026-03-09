@@ -1279,7 +1279,7 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
       const glowPx = (t.glow ?? 0) * cell;
       const bgOp = t.bgOpacity ?? 0;
       if (bgOp > 0) {
-        ctx.fillStyle = BG; ctx.globalAlpha = bgOp;
+        ctx.fillStyle = t.bgColor ?? BG; ctx.globalAlpha = bgOp;
         for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++)
           if (tGrid[y]?.[x] === 1) ctx.fillRect(x*cell, y*cell, cell, cell);
       }
@@ -3026,12 +3026,17 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                       style={{ display: "block", width: "100%", marginTop: 3 }} />
                   </label>
                   {posterSelected.knit !== false && (
-                    <label style={{ fontSize: 11, color: "#a07040" }}>
-                      cell bg — {Math.round((posterSelected.bgOpacity ?? 0) * 100)}%
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                        <span style={{ fontSize: 11, color: "#a07040" }}>cell bg — {Math.round((posterSelected.bgOpacity ?? 0) * 100)}%</span>
+                        <input type="color" value={posterSelected.bgColor ?? "#fdf3e7"}
+                          onChange={e => updatePosterSelected({ bgColor: e.target.value })}
+                          style={{ width: 22, height: 18, cursor: "pointer", padding: 1, borderRadius: 4, border: "none" }} />
+                      </div>
                       <input type="range" min={0} max={1} step={0.01} value={posterSelected.bgOpacity ?? 0}
                         onChange={(e) => updatePosterSelected({ bgOpacity: Number(e.target.value) })}
-                        style={{ display: "block", width: "100%", marginTop: 3 }} />
-                    </label>
+                        style={{ display: "block", width: "100%" }} />
+                    </div>
                   )}
                   <label style={{ fontSize: 11, color: "#a07040" }}>
                     opacity — {Math.round((posterSelected.opacity ?? 1) * 100)}%
