@@ -1966,6 +1966,78 @@ export default function App() {
     setIsRecording(false);
   }
 
+  function saveSession() {
+    const toDataUrl = (img) => {
+      if (!img) return null;
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext("2d").drawImage(img, 0, 0);
+      return c.toDataURL();
+    };
+    const session = {
+      v: 1,
+      patternMode, rows, cols, cell, symmetry, combineMode,
+      warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha,
+      borderRadius, sizeVariation, posterizeLevels,
+      editInvert, stitchInvert,
+      modes, speeds, thresholds, alphas, layerBand, layerColors,
+      grids,
+      imageMode, imgThreshold, imgInvert,
+      ovBlend, ovOpacity, ovBrushSize, ovBrushMode,
+      bgImg: toDataUrl(bgImg),
+      maskImg: toDataUrl(maskImg),
+    };
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(session)], { type: "application/json" }));
+    a.download = `soundweave-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.json`;
+    a.click();
+  }
+
+  function loadSession(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const s = JSON.parse(e.target.result);
+        if (s.patternMode) setPatternMode(s.patternMode);
+        if (s.rows)    setRows(s.rows);
+        if (s.cols)    setCols(s.cols);
+        if (s.cell)    setCell(s.cell);
+        if (s.symmetry != null)    setSymmetry(s.symmetry);
+        if (s.combineMode)         setCombineMode(s.combineMode);
+        if (s.warpColor)           setWarpColor(s.warpColor);
+        if (s.cc)                  setCc(s.cc);
+        if (s.gap != null)         setGap(s.gap);
+        if (s.imageOpacity != null) setImageOpacity(s.imageOpacity);
+        if (s.colorAlpha != null)  setColorAlpha(s.colorAlpha);
+        if (s.ccAlpha != null)     setCcAlpha(s.ccAlpha);
+        if (s.borderRadius != null) setBorderRadius(s.borderRadius);
+        if (s.sizeVariation != null) setSizeVariation(s.sizeVariation);
+        if (s.posterizeLevels != null) setPosterizeLevels(s.posterizeLevels);
+        if (s.editInvert != null)  setEditInvert(s.editInvert);
+        if (s.stitchInvert != null) setStitchInvert(s.stitchInvert);
+        if (s.modes)      setModes(s.modes);
+        if (s.speeds)     setSpeeds(s.speeds);
+        if (s.thresholds) setThresholds(s.thresholds);
+        if (s.alphas)     setAlphas(s.alphas);
+        if (s.layerBand)  setLayerBand(s.layerBand);
+        if (s.layerColors) setLayerColors(s.layerColors);
+        if (s.grids)      setGrids(s.grids);
+        if (s.imageMode)  setImageMode(s.imageMode);
+        if (s.imgThreshold != null) setImgThreshold(s.imgThreshold);
+        if (s.imgInvert != null)    setImgInvert(s.imgInvert);
+        if (s.ovBlend)    setOvBlend(s.ovBlend);
+        if (s.ovOpacity != null)   setOvOpacity(s.ovOpacity);
+        if (s.ovBrushSize != null) setOvBrushSize(s.ovBrushSize);
+        if (s.ovBrushMode) setOvBrushMode(s.ovBrushMode);
+        if (s.bgImg) { const img = new Image(); img.onload = () => setBgImg(img); img.src = s.bgImg; }
+        else setBgImg(null);
+        if (s.maskImg) { const img = new Image(); img.onload = () => setMaskImg(img); img.src = s.maskImg; }
+        else setMaskImg(null);
+      } catch (err) { console.error("Failed to load session", err); }
+    };
+    reader.readAsText(file);
+  }
+
   function openPerformWindow() {
     if (performWinRef.current && !performWinRef.current.closed) {
       performWinRef.current.focus(); return;
@@ -2312,6 +2384,10 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                   ? <button onClick={stopRecording} style={{ ...btn(true), background: "#ff2222", borderColor: "#ff2222", color: "#fff", boxShadow: "0 0 10px #ff2222" }}>stop rec</button>
                   : <button onClick={startRecording} style={{ ...btn(false), boxShadow: `0 0 6px ${NG}` }}>record</button>
                 }
+                <button onClick={saveSession} style={{ ...btn(false), borderColor: "#33aaff", color: "#66ccff" }}>save</button>
+                <label style={{ ...btn(false), borderColor: "#33aaff", color: "#66ccff", cursor: "pointer" }}>
+                  load<input type="file" accept=".json" style={{ display: "none" }} onChange={e => { if (e.target.files?.[0]) { loadSession(e.target.files[0]); e.target.value = ""; } }} />
+                </label>
                 {performOpen
                   ? <button onClick={closePerformWindow} style={{ ...btn(true), background: "#6600cc", borderColor: "#9933ff", color: "#fff", boxShadow: "0 0 10px #9933ff" }}>✕ perform</button>
                   : <button onClick={openPerformWindow} style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", boxShadow: "0 0 6px #9933ff44" }}>⬡ perform</button>
