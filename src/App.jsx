@@ -1269,19 +1269,27 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
   const knitTexts    = (texts ?? []).filter(t => t.knit !== false && t.content);
   const legibleTexts = (texts ?? []).filter(t => t.knit === false  && t.content);
   if (knitTexts.length > 0) {
-    const textGrid = compositeTextsToGrid(knitTexts, gridW, gridH);
-    ctx.strokeStyle = TEXT_INK; ctx.lineWidth = Math.max(1.2, cell*0.14);
-    ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
-      if (textGrid[y]?.[x] === 1) {
-        const cx = x*cell; const cy = y*cell;
-        ctx.moveTo(cx+cell*0.12, cy+cell*0.10);
-        ctx.lineTo(cx+cell*0.50, cy+cell*0.88);
-        ctx.lineTo(cx+cell*0.88, cy+cell*0.10);
+    ctx.lineWidth = Math.max(1.2, cell*0.14);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    for (const t of knitTexts) {
+      const tGrid = compositeTextsToGrid([t], gridW, gridH);
+      const tColor = t.color ?? TEXT_INK;
+      const glowPx = (t.glow ?? 0) * cell;
+      ctx.strokeStyle = tColor; ctx.globalAlpha = 0.85;
+      if (glowPx > 0) { ctx.shadowColor = tColor; ctx.shadowBlur = glowPx; }
+      ctx.beginPath();
+      for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
+        if (tGrid[y]?.[x] === 1) {
+          const cx = x*cell; const cy = y*cell;
+          ctx.moveTo(cx+cell*0.12, cy+cell*0.10);
+          ctx.lineTo(cx+cell*0.50, cy+cell*0.88);
+          ctx.lineTo(cx+cell*0.88, cy+cell*0.10);
+        }
       }
+      ctx.stroke();
+      ctx.shadowBlur = 0; ctx.shadowColor = "transparent";
     }
-    ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 1;
   }
   // Legible texts (direct fillText)
   if (legibleTexts.length > 0) {
@@ -2969,42 +2977,40 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                       knit style
                     </label>
                   </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <label style={{ fontSize: 11, color: "#a07040", display: "flex", alignItems: "center", gap: 5 }}>
+                      <input type="checkbox" checked={posterSelected.color != null}
+                        onChange={e => updatePosterSelected({ color: e.target.checked ? "#c8a96e" : null })} />
+                      color
+                      {posterSelected.color != null && (
+                        <input type="color" value={posterSelected.color}
+                          onChange={e => updatePosterSelected({ color: e.target.value })}
+                          style={{ width: 28, height: 20, cursor: "pointer", padding: 1, borderRadius: 4, border: "none" }} />
+                      )}
+                    </label>
+                  </div>
+                  <label style={{ fontSize: 11, color: "#a07040" }}>
+                    glow — {posterSelected.glow ?? 0}
+                    <input type="range" min={0} max={20} step={0.5} value={posterSelected.glow ?? 0}
+                      onChange={(e) => updatePosterSelected({ glow: Number(e.target.value) })}
+                      style={{ display: "block", width: "100%", marginTop: 3 }} />
+                  </label>
                   {posterSelected.knit === false && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <label style={{ fontSize: 11, color: "#a07040", flex: 1, minWidth: 100 }}>
-                          opacity — {Math.round((posterSelected.opacity ?? 1) * 100)}%
-                          <input type="range" min={0} max={1} step={0.01} value={posterSelected.opacity ?? 1}
-                            onChange={(e) => updatePosterSelected({ opacity: Number(e.target.value) })}
-                            style={{ display: "block", width: "100%", marginTop: 3 }} />
-                        </label>
-                        <label style={{ fontSize: 11, color: "#a07040" }}>blend
-                          <select value={posterSelected.blend ?? "source-over"}
-                            onChange={(e) => updatePosterSelected({ blend: e.target.value })}
-                            style={{ marginTop: 3, display: "block", background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 11 }}>
-                            {["source-over","multiply","screen","overlay","soft-light","hard-light","color-burn","difference","exclusion"].map(b => (
-                              <option key={b} value={b}>{b}</option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <label style={{ fontSize: 11, color: "#a07040", display: "flex", alignItems: "center", gap: 5 }}>
-                          <input type="checkbox" checked={posterSelected.color != null}
-                            onChange={e => updatePosterSelected({ color: e.target.checked ? "#c8a96e" : null })} />
-                          color
-                          {posterSelected.color != null && (
-                            <input type="color" value={posterSelected.color}
-                              onChange={e => updatePosterSelected({ color: e.target.value })}
-                              style={{ width: 28, height: 20, cursor: "pointer", padding: 1, borderRadius: 4, border: "none" }} />
-                          )}
-                        </label>
-                      </div>
-                      <label style={{ fontSize: 11, color: "#a07040" }}>
-                        glow — {posterSelected.glow ?? 0}
-                        <input type="range" min={0} max={20} step={0.5} value={posterSelected.glow ?? 0}
-                          onChange={(e) => updatePosterSelected({ glow: Number(e.target.value) })}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <label style={{ fontSize: 11, color: "#a07040", flex: 1, minWidth: 100 }}>
+                        opacity — {Math.round((posterSelected.opacity ?? 1) * 100)}%
+                        <input type="range" min={0} max={1} step={0.01} value={posterSelected.opacity ?? 1}
+                          onChange={(e) => updatePosterSelected({ opacity: Number(e.target.value) })}
                           style={{ display: "block", width: "100%", marginTop: 3 }} />
+                      </label>
+                      <label style={{ fontSize: 11, color: "#a07040" }}>blend
+                        <select value={posterSelected.blend ?? "source-over"}
+                          onChange={(e) => updatePosterSelected({ blend: e.target.value })}
+                          style={{ marginTop: 3, display: "block", background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 11 }}>
+                          {["source-over","multiply","screen","overlay","soft-light","hard-light","color-burn","difference","exclusion"].map(b => (
+                            <option key={b} value={b}>{b}</option>
+                          ))}
+                        </select>
                       </label>
                     </div>
                   )}
