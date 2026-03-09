@@ -770,7 +770,7 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
   ctx.imageSmoothingEnabled = true;
 
   const W = cols * cell, H = rows * cell;
-  ctx.fillStyle = invert ? "#fdf3e7" : "#0d0d0d";
+  ctx.fillStyle = invert ? "#16121e" : "#fdf3e7";
   ctx.fillRect(0, 0, W, H);
 
   // Build V-stitch path for all cells (shared for bgImg masking and base texture)
@@ -785,8 +785,8 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
   // bgImg composited through V-stitch mask (same technique as poster)
   if (bgImg) {
     compositeImgThrough(ctx, bgImg, W, H, vPath, {
-      blend: invert ? "multiply" : "screen",
-      opacity: invert ? 0.75 : 0.65,
+      blend: invert ? "screen" : "multiply",
+      opacity: invert ? 0.65 : 0.75,
       lineWidth: Math.max(1.5, cell * 0.13),
     });
   }
