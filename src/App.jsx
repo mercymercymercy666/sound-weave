@@ -2342,7 +2342,16 @@ function addClip(id,dataUrl,mediaType,filter,mix){
       scaledMask.getContext("2d").drawImage(posterMaskRef.current, 0, 0, print.width, print.height);
       drawMediaOverlay(print, posterMediaRef.current, scaledMask, opacity, blend);
     }
-    const a = document.createElement("a"); a.download = "knit-poster.png"; a.href = print.toDataURL("image/png"); a.click();
+    let out = print;
+    if (editInvert) {
+      const inv = document.createElement("canvas");
+      inv.width = print.width; inv.height = print.height;
+      const ic = inv.getContext("2d");
+      ic.filter = "invert(1)";
+      ic.drawImage(print, 0, 0);
+      out = inv;
+    }
+    const a = document.createElement("a"); a.download = "knit-poster.png"; a.href = out.toDataURL("image/png"); a.click();
   }
 
   // shared style tokens
