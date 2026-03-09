@@ -1189,7 +1189,7 @@ function drawStaveGroup(ctx, centerRow, gridW, cell, color, seed) {
   ctx.globalAlpha = 1; ctx.setLineDash([]);
 }
 
-function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInvert, staveCount, notationSeed, bgImg = null }) {
+function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInvert, staveCount, notationSeed, bgImg = null, sourceCanvas = null }) {
   const W = gridW * cell; const H = gridH * cell;
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
@@ -1199,6 +1199,12 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
   const NOTATION    = fabricInvert ? "rgba(200,170,110,0.7)" : "#8B6845";
   const TEXT_INK    = fabricInvert ? "#fdf3e7" : "#3d2b1f";
   ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+  if (sourceCanvas && sourceCanvas.width > 0 && sourceCanvas.height > 0) {
+    // Use live edit canvas as fabric base — mirrors whatever mode is active
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(sourceCanvas, 0, 0, W, H);
+    ctx.imageSmoothingEnabled = false;
+  } else {
   // Build a single V-stitch path (all cells batched) — reused for both image masking and base texture
   const vPath = new Path2D();
   for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
@@ -1230,6 +1236,7 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
   // Base V-texture (FABRIC_BASE) drawn on top of image-in-stitches
   ctx.strokeStyle = FABRIC_BASE; ctx.lineWidth = Math.max(0.7, cell * 0.09);
   ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.stroke(vPath);
+  } // end else (no sourceCanvas)
   // Audio fabric layers
   if (fabricLayers && fabricLayers.length > 0) {
     const pad = Math.max(1, cell * 0.10);
@@ -2234,7 +2241,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
           fabricLayers, fabricInvert: fi = false, texts: ts = [], selectedId: sid,
           gridW: gw = colsRef.current, gridH: gh = rowsRef.current,
           overlayBlend: blend, overlayOpacity: opacity } = posterParamRef.current;
-        drawPoster(c, { gridW: gw, gridH: gh, cell: cs, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns, bgImg: bgImgRef.current });
+        drawPoster(c, { gridW: gw, gridH: gh, cell: cs, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns, bgImg: bgImgRef.current, sourceCanvas: canvasRef.current });
         if (ot && posterMediaRef.current && posterMaskRef.current)
           drawMediaOverlay(c, posterMediaRef.current, posterMaskRef.current, opacity, blend);
         else if (!ot && overlayMediaRef.current) {
@@ -2318,7 +2325,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
       texts: ts = [], gridW: gw = cols, gridH: gh = rows,
       overlayType: ot, overlayOpacity: opacity, overlayBlend: blend } = posterParamRef.current;
     const print = document.createElement("canvas");
-    drawPoster(print, { gridW: gw, gridH: gh, cell: cs * 3, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns, bgImg: bgImgRef.current });
+    drawPoster(print, { gridW: gw, gridH: gh, cell: cs * 3, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns, bgImg: bgImgRef.current, sourceCanvas: canvasRef.current });
     if (ot && posterMediaRef.current && posterMaskRef.current) {
       const scaledMask = document.createElement("canvas");
       scaledMask.width = print.width; scaledMask.height = print.height;
