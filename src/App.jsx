@@ -1283,9 +1283,16 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
       const fs = Math.max(8, t.fontSize * cell);
       ctx.font = `${t.bold ? "bold " : ""}${fs}px ${t.fontFamily}`;
       const lines = t.content.split("\n"); const lineH = fs * 1.25;
-      ctx.shadowColor = fabricInvert ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.6)";
-      ctx.shadowBlur = Math.max(2, cell * 0.5);
-      ctx.fillStyle = TEXT_INK;
+      const textColor = t.color ?? TEXT_INK;
+      const glowPx = (t.glow ?? 0) * cell;
+      if (glowPx > 0) {
+        ctx.shadowColor = textColor;
+        ctx.shadowBlur = glowPx;
+      } else {
+        ctx.shadowColor = fabricInvert ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.6)";
+        ctx.shadowBlur = Math.max(2, cell * 0.5);
+      }
+      ctx.fillStyle = textColor;
       ctx.globalAlpha = t.opacity ?? 0.92;
       ctx.globalCompositeOperation = t.blend ?? "source-over";
       for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], t.x * cell, t.y * cell + i * lineH);
@@ -2161,7 +2168,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   // ── POSTER state ─────────────────────────────────────────────────────────
   const [posterOpen, setPosterOpen] = useState(false);
   const [posterTexts, setPosterTexts] = useState([
-    { id: 0, content: "SOUND WEAVE", fontSize: 18, fontFamily: "serif", bold: true, x: 8, y: 68, knit: true, opacity: 1, blend: "source-over" },
+    { id: 0, content: "SOUND WEAVE", fontSize: 18, fontFamily: "serif", bold: true, x: 8, y: 68, knit: true, opacity: 1, blend: "source-over", color: null, glow: 0 },
   ]);
   const [posterSelectedId, setPosterSelectedId] = useState(0);
   const [posterNextId, setPosterNextId] = useState(1);
@@ -2295,7 +2302,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   }
   function addPosterText() {
     const id = posterNextId; setPosterNextId(id + 1);
-    setPosterTexts(prev => [...prev, { id, content: "New text", fontSize: 18, fontFamily: "serif", bold: false, x: 8, y: 8, knit: true, opacity: 1, blend: "source-over" }]);
+    setPosterTexts(prev => [...prev, { id, content: "New text", fontSize: 18, fontFamily: "serif", bold: false, x: 8, y: 8, knit: true, opacity: 1, blend: "source-over", color: null, glow: 0 }]);
     setPosterSelectedId(id);
   }
   function removePosterText(id) {
@@ -2956,21 +2963,41 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                     </label>
                   </div>
                   {posterSelected.knit === false && (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <label style={{ fontSize: 11, color: "#a07040", flex: 1, minWidth: 100 }}>
-                        opacity — {Math.round((posterSelected.opacity ?? 1) * 100)}%
-                        <input type="range" min={0} max={1} step={0.01} value={posterSelected.opacity ?? 1}
-                          onChange={(e) => updatePosterSelected({ opacity: Number(e.target.value) })}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <label style={{ fontSize: 11, color: "#a07040", flex: 1, minWidth: 100 }}>
+                          opacity — {Math.round((posterSelected.opacity ?? 1) * 100)}%
+                          <input type="range" min={0} max={1} step={0.01} value={posterSelected.opacity ?? 1}
+                            onChange={(e) => updatePosterSelected({ opacity: Number(e.target.value) })}
+                            style={{ display: "block", width: "100%", marginTop: 3 }} />
+                        </label>
+                        <label style={{ fontSize: 11, color: "#a07040" }}>blend
+                          <select value={posterSelected.blend ?? "source-over"}
+                            onChange={(e) => updatePosterSelected({ blend: e.target.value })}
+                            style={{ marginTop: 3, display: "block", background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 11 }}>
+                            {["source-over","multiply","screen","overlay","soft-light","hard-light","color-burn","difference","exclusion"].map(b => (
+                              <option key={b} value={b}>{b}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <label style={{ fontSize: 11, color: "#a07040", display: "flex", alignItems: "center", gap: 5 }}>
+                          <input type="checkbox" checked={posterSelected.color != null}
+                            onChange={e => updatePosterSelected({ color: e.target.checked ? "#c8a96e" : null })} />
+                          color
+                          {posterSelected.color != null && (
+                            <input type="color" value={posterSelected.color}
+                              onChange={e => updatePosterSelected({ color: e.target.value })}
+                              style={{ width: 28, height: 20, cursor: "pointer", padding: 1, borderRadius: 4, border: "none" }} />
+                          )}
+                        </label>
+                      </div>
+                      <label style={{ fontSize: 11, color: "#a07040" }}>
+                        glow — {posterSelected.glow ?? 0}
+                        <input type="range" min={0} max={20} step={0.5} value={posterSelected.glow ?? 0}
+                          onChange={(e) => updatePosterSelected({ glow: Number(e.target.value) })}
                           style={{ display: "block", width: "100%", marginTop: 3 }} />
-                      </label>
-                      <label style={{ fontSize: 11, color: "#a07040" }}>blend
-                        <select value={posterSelected.blend ?? "source-over"}
-                          onChange={(e) => updatePosterSelected({ blend: e.target.value })}
-                          style={{ marginTop: 3, display: "block", background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 11 }}>
-                          {["source-over","multiply","screen","overlay","soft-light","hard-light","color-burn","difference","exclusion"].map(b => (
-                            <option key={b} value={b}>{b}</option>
-                          ))}
-                        </select>
                       </label>
                     </div>
                   )}
