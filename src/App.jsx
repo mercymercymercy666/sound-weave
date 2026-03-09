@@ -768,7 +768,7 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
   ctx.imageSmoothingEnabled = true;
 
   const W = cols * cell, H = rows * cell;
-  ctx.fillStyle = invert ? "#16121e" : "#fdf3e7";
+  ctx.fillStyle = invert ? "#fdf3e7" : "#0d0d0d";
   ctx.fillRect(0, 0, W, H);
 
   // Build V-stitch path for all cells (shared for bgImg masking and base texture)
