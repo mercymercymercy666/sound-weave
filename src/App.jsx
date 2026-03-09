@@ -791,14 +791,14 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
     });
   }
 
-  // Base V-texture
-  ctx.strokeStyle = invert ? "rgba(220,185,130,0.18)" : "rgba(140,95,40,0.20)";
+  const [wpR, wpG, wpB] = parseColor(warpColor);
+  const [ccR, ccG, ccB] = parseColor(cc);
+
+  // Base V-texture — uses warpColor at low opacity so MC picker is always visible
+  ctx.strokeStyle = `rgba(${wpR},${wpG},${wpB},0.20)`;
   ctx.lineWidth = Math.max(0.7, cell * 0.09);
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   ctx.stroke(vPath);
-
-  const [wpR, wpG, wpB] = parseColor(warpColor);
-  const [ccR, ccG, ccB] = parseColor(cc);
   for (const L of layers) {
     const grid01 = grids[L.id];
     if (!grid01) continue;
