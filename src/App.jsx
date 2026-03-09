@@ -1277,6 +1277,12 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
       const tGrid = compositeTextsToGrid([t], gridW, gridH);
       const tColor = t.color ?? TEXT_INK;
       const glowPx = (t.glow ?? 0) * cell;
+      const bgOp = t.bgOpacity ?? 0;
+      if (bgOp > 0) {
+        ctx.fillStyle = BG; ctx.globalAlpha = bgOp;
+        for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++)
+          if (tGrid[y]?.[x] === 1) ctx.fillRect(x*cell, y*cell, cell, cell);
+      }
       ctx.strokeStyle = tColor; ctx.globalAlpha = t.opacity ?? 0.85;
       if (glowPx > 0) { ctx.shadowColor = tColor; ctx.shadowBlur = glowPx; }
       ctx.beginPath();
@@ -3018,6 +3024,14 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                       onChange={(e) => updatePosterSelected({ glow: Number(e.target.value) })}
                       style={{ display: "block", width: "100%", marginTop: 3 }} />
                   </label>
+                  {posterSelected.knit !== false && (
+                    <label style={{ fontSize: 11, color: "#a07040" }}>
+                      cell bg — {Math.round((posterSelected.bgOpacity ?? 0) * 100)}%
+                      <input type="range" min={0} max={1} step={0.01} value={posterSelected.bgOpacity ?? 0}
+                        onChange={(e) => updatePosterSelected({ bgOpacity: Number(e.target.value) })}
+                        style={{ display: "block", width: "100%", marginTop: 3 }} />
+                    </label>
+                  )}
                   <label style={{ fontSize: 11, color: "#a07040" }}>
                     opacity — {Math.round((posterSelected.opacity ?? 1) * 100)}%
                     <input type="range" min={0} max={1} step={0.01} value={posterSelected.opacity ?? 1}
