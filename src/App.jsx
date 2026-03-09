@@ -3026,16 +3026,19 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                       style={{ display: "block", width: "100%", marginTop: 3 }} />
                   </label>
                   {posterSelected.knit !== false && (
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                        <span style={{ fontSize: 11, color: "#a07040" }}>cell bg — {Math.round((posterSelected.bgOpacity ?? 0) * 100)}%</span>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <label style={{ fontSize: 11, color: "#a07040", flex: 1 }}>
+                        cell bg — {Math.round((posterSelected.bgOpacity ?? 0) * 100)}%
+                        <input type="range" min={0} max={1} step={0.01} value={posterSelected.bgOpacity ?? 0}
+                          onChange={(e) => updatePosterSelected({ bgOpacity: Number(e.target.value) })}
+                          style={{ display: "block", width: "100%", marginTop: 3 }} />
+                      </label>
+                      <label style={{ fontSize: 11, color: "#a07040" }}>
+                        color
                         <input type="color" value={posterSelected.bgColor ?? "#fdf3e7"}
                           onChange={e => updatePosterSelected({ bgColor: e.target.value })}
-                          style={{ width: 22, height: 18, cursor: "pointer", padding: 1, borderRadius: 4, border: "none" }} />
-                      </div>
-                      <input type="range" min={0} max={1} step={0.01} value={posterSelected.bgOpacity ?? 0}
-                        onChange={(e) => updatePosterSelected({ bgOpacity: Number(e.target.value) })}
-                        style={{ display: "block", width: "100%" }} />
+                          style={{ display: "block", width: 28, height: 20, cursor: "pointer", padding: 1, borderRadius: 4, border: "none", marginTop: 3 }} />
+                      </label>
                     </div>
                   )}
                   <label style={{ fontSize: 11, color: "#a07040" }}>
