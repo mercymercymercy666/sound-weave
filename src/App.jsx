@@ -1277,7 +1277,7 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
       const tGrid = compositeTextsToGrid([t], gridW, gridH);
       const tColor = t.color ?? TEXT_INK;
       const glowPx = (t.glow ?? 0) * cell;
-      ctx.strokeStyle = tColor; ctx.globalAlpha = 0.85;
+      ctx.strokeStyle = tColor; ctx.globalAlpha = t.opacity ?? 0.85;
       if (glowPx > 0) { ctx.shadowColor = tColor; ctx.shadowBlur = glowPx; }
       ctx.beginPath();
       for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
@@ -3006,14 +3006,14 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                       onChange={(e) => updatePosterSelected({ glow: Number(e.target.value) })}
                       style={{ display: "block", width: "100%", marginTop: 3 }} />
                   </label>
+                  <label style={{ fontSize: 11, color: "#a07040" }}>
+                    opacity — {Math.round((posterSelected.opacity ?? 1) * 100)}%
+                    <input type="range" min={0} max={1} step={0.01} value={posterSelected.opacity ?? 1}
+                      onChange={(e) => updatePosterSelected({ opacity: Number(e.target.value) })}
+                      style={{ display: "block", width: "100%", marginTop: 3 }} />
+                  </label>
                   {posterSelected.knit === false && (
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <label style={{ fontSize: 11, color: "#a07040", flex: 1, minWidth: 100 }}>
-                        opacity — {Math.round((posterSelected.opacity ?? 1) * 100)}%
-                        <input type="range" min={0} max={1} step={0.01} value={posterSelected.opacity ?? 1}
-                          onChange={(e) => updatePosterSelected({ opacity: Number(e.target.value) })}
-                          style={{ display: "block", width: "100%", marginTop: 3 }} />
-                      </label>
                       <label style={{ fontSize: 11, color: "#a07040" }}>blend
                         <select value={posterSelected.blend ?? "source-over"}
                           onChange={(e) => updatePosterSelected({ blend: e.target.value })}
