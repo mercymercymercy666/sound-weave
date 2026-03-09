@@ -1284,6 +1284,7 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
           if (tGrid[y]?.[x] === 1) ctx.fillRect(x*cell, y*cell, cell, cell);
       }
       ctx.strokeStyle = tColor; ctx.globalAlpha = t.opacity ?? 0.85;
+      ctx.globalCompositeOperation = t.blend ?? "source-over";
       if (glowPx > 0) { ctx.shadowColor = tColor; ctx.shadowBlur = glowPx; }
       ctx.beginPath();
       for (let y = 0; y < gridH; y++) for (let x = 0; x < gridW; x++) {
@@ -1295,7 +1296,7 @@ function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInv
         }
       }
       ctx.stroke();
-      ctx.shadowBlur = 0; ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.globalCompositeOperation = "source-over";
     }
     ctx.globalAlpha = 1;
   }
@@ -3038,19 +3039,15 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                       onChange={(e) => updatePosterSelected({ opacity: Number(e.target.value) })}
                       style={{ display: "block", width: "100%", marginTop: 3 }} />
                   </label>
-                  {posterSelected.knit === false && (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <label style={{ fontSize: 11, color: "#a07040" }}>blend
-                        <select value={posterSelected.blend ?? "source-over"}
-                          onChange={(e) => updatePosterSelected({ blend: e.target.value })}
-                          style={{ marginTop: 3, display: "block", background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 11 }}>
-                          {["source-over","multiply","screen","overlay","soft-light","hard-light","color-burn","difference","exclusion"].map(b => (
-                            <option key={b} value={b}>{b}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  )}
+                  <label style={{ fontSize: 11, color: "#a07040" }}>blend
+                    <select value={posterSelected.blend ?? "source-over"}
+                      onChange={(e) => updatePosterSelected({ blend: e.target.value })}
+                      style={{ marginTop: 3, display: "block", background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 11 }}>
+                      {["source-over","multiply","screen","overlay","soft-light","hard-light","color-burn","difference","exclusion"].map(b => (
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
               )}
             </div>
