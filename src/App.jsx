@@ -1386,7 +1386,7 @@ export default function App() {
   const [bgImg, setBgImg] = useState(null);
   const [maskImg, setMaskImg] = useState(null);
   const [patternMode, setPatternMode] = useState("weave"); // "weave"|"lace"|"chart"|"stitch"
-  const [stitchInvert, setStitchInvert] = useState(false);
+  const [stitchInvert, setStitchInvert] = useState(true);
   const [editInvert, setEditInvert] = useState(false);
   const editInvertRef = useRef(false);
 
