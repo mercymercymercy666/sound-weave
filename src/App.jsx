@@ -770,7 +770,7 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
   ctx.imageSmoothingEnabled = true;
 
   const W = cols * cell, H = rows * cell;
-  ctx.fillStyle = invert ? "#16121e" : "#fdf3e7";
+  ctx.fillStyle = invert ? "#fdf3e7" : "#16121e";
   ctx.fillRect(0, 0, W, H);
 
   // Build V-stitch path for all cells (shared for bgImg masking and base texture)
@@ -785,8 +785,8 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
   // bgImg composited through V-stitch mask (same technique as poster)
   if (bgImg) {
     compositeImgThrough(ctx, bgImg, W, H, vPath, {
-      blend: invert ? "screen" : "multiply",
-      opacity: invert ? 0.65 : 0.75,
+      blend: invert ? "multiply" : "screen",
+      opacity: invert ? 0.75 : 0.65,
       lineWidth: Math.max(1.5, cell * 0.13),
     });
   }
@@ -1386,7 +1386,7 @@ export default function App() {
   const [bgImg, setBgImg] = useState(null);
   const [maskImg, setMaskImg] = useState(null);
   const [patternMode, setPatternMode] = useState("weave"); // "weave"|"lace"|"chart"|"stitch"
-  const [stitchInvert, setStitchInvert] = useState(true);
+  const [stitchInvert, setStitchInvert] = useState(false);
   const [editInvert, setEditInvert] = useState(false);
   const editInvertRef = useRef(false);
 
