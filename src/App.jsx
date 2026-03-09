@@ -2010,6 +2010,9 @@ export default function App() {
       ovBlend, ovOpacity, ovBrushSize, ovBrushMode,
       bgImg: toDataUrl(bgImg),
       maskImg: toDataUrl(maskImg),
+      posterTexts, posterNextId,
+      posterCell, staveCount, notationSeed, fabricInvert,
+      posterOvType, posterOvOpacity, posterOvBlend,
     };
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([JSON.stringify(session)], { type: "application/json" }));
@@ -2057,6 +2060,15 @@ export default function App() {
         else setBgImg(null);
         if (s.maskImg) { const img = new Image(); img.onload = () => setMaskImg(img); img.src = s.maskImg; }
         else setMaskImg(null);
+        if (s.posterTexts)          setPosterTexts(s.posterTexts);
+        if (s.posterNextId != null)  setPosterNextId(s.posterNextId);
+        if (s.posterCell != null)    setPosterCell(s.posterCell);
+        if (s.staveCount != null)    setStaveCount(s.staveCount);
+        if (s.notationSeed != null)  setNotationSeed(s.notationSeed);
+        if (s.fabricInvert != null)  setFabricInvert(s.fabricInvert);
+        if (s.posterOvType !== undefined) setPosterOvType(s.posterOvType);
+        if (s.posterOvOpacity != null)    setPosterOvOpacity(s.posterOvOpacity);
+        if (s.posterOvBlend)              setPosterOvBlend(s.posterOvBlend);
       } catch (err) { console.error("Failed to load session", err); }
     };
     reader.readAsText(file);
