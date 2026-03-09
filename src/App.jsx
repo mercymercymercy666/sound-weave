@@ -785,8 +785,8 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
   // bgImg composited through V-stitch mask (same technique as poster)
   if (bgImg) {
     compositeImgThrough(ctx, bgImg, W, H, vPath, {
-      blend: invert ? "screen" : "multiply",
-      opacity: invert ? 0.65 : 0.75,
+      blend: invert ? "multiply" : "screen",
+      opacity: invert ? 0.75 : 0.65,
       lineWidth: Math.max(1.5, cell * 0.13),
     });
   }
