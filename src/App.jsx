@@ -2230,6 +2230,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   const [posterSelectedImgId, setPosterSelectedImgId] = useState(null);
   const posterImgsRef = useRef([]);
   const posterImgElemsRef = useRef({});
+  const posterImgResizeRef = useRef(null); // { id, handle, origX, origY, origW, origH, startGX, startGY }
   posterImgsRef.current = posterImgs;
 
   const posterCanvasRef   = useRef(null);
@@ -2302,9 +2303,15 @@ function addClip(id,dataUrl,mediaType,filter,mix){
           }
           const selImg = posterImgsRef.current.find(pi => pi.id === posterParamRef.current.selectedImgId);
           if (selImg) {
+            const ix = selImg.x * cs, iy = selImg.y * cs, iw = selImg.w * cs, ih = selImg.h * cs;
             ctx2.save(); ctx2.strokeStyle = "#c8a96e"; ctx2.lineWidth = 2; ctx2.setLineDash([4, 4]);
-            ctx2.strokeRect(selImg.x * cs, selImg.y * cs, selImg.w * cs, selImg.h * cs);
-            ctx2.setLineDash([]); ctx2.restore();
+            ctx2.strokeRect(ix, iy, iw, ih); ctx2.setLineDash([]);
+            // Corner + edge handles
+            const hs = 7;
+            const handles = [[ix,iy],[ix+iw/2,iy],[ix+iw,iy],[ix+iw,iy+ih/2],[ix+iw,iy+ih],[ix+iw/2,iy+ih],[ix,iy+ih],[ix,iy+ih/2]];
+            ctx2.fillStyle = "#c8a96e";
+            for (const [hx, hy] of handles) ctx2.fillRect(hx - hs/2, hy - hs/2, hs, hs);
+            ctx2.restore();
           }
         }
         drawPosterSelectionHighlight(c, ts, sid, cs);
@@ -2980,6 +2987,27 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                         e.preventDefault(); return;
                       }
                     }
+                    // Check image resize handles first (only for selected image)
+                    const selImgId = posterParamRef.current.selectedImgId;
+                    if (selImgId != null) {
+                      const selImg = posterImgsRef.current.find(pi => pi.id === selImgId);
+                      if (selImg) {
+                        const hr = 7 / cs; // handle hit radius in grid units
+                        const mx = selImg.x + selImg.w / 2, my = selImg.y + selImg.h / 2;
+                        const r = selImg.x + selImg.w, b2 = selImg.y + selImg.h;
+                        const handles = [
+                          ["nw", selImg.x, selImg.y], ["n", mx, selImg.y], ["ne", r, selImg.y],
+                          ["e",  r, my],               ["se", r, b2],
+                          ["s",  mx, b2],              ["sw", selImg.x, b2], ["w", selImg.x, my],
+                        ];
+                        for (const [handle, hx, hy] of handles) {
+                          if (Math.abs(gx - hx) <= hr && Math.abs(gy - hy) <= hr) {
+                            posterImgResizeRef.current = { id: selImg.id, handle, origX: selImg.x, origY: selImg.y, origW: selImg.w, origH: selImg.h, startGX: gx, startGY: gy };
+                            e.preventDefault(); return;
+                          }
+                        }
+                      }
+                    }
                     // Check image drag
                     for (let i = posterImgsRef.current.length - 1; i >= 0; i--) {
                       const pi = posterImgsRef.current[i];
@@ -3014,6 +3042,18 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                       setPosterTexts(prev => prev.map(t => t.id === id ? { ...t, fontSize: newSize } : t));
                       return;
                     }
+                    // Image resize
+                    if (posterImgResizeRef.current) {
+                      const { id, handle, origX, origY, origW, origH, startGX, startGY } = posterImgResizeRef.current;
+                      const dx = gx - startGX, dy = gy - startGY;
+                      let nx = origX, ny = origY, nw = origW, nh = origH;
+                      if (handle.includes("e")) { nw = Math.max(2, origW + dx); }
+                      if (handle.includes("w")) { nw = Math.max(2, origW - dx); nx = origX + origW - nw; }
+                      if (handle.includes("s")) { nh = Math.max(2, origH + dy); }
+                      if (handle.includes("n")) { nh = Math.max(2, origH - dy); ny = origY + origH - nh; }
+                      setPosterImgs(prev => prev.map(pi => pi.id === id ? { ...pi, x: Math.round(nx), y: Math.round(ny), w: Math.round(nw), h: Math.round(nh) } : pi));
+                      posterParamRef.current.dirty = true; return;
+                    }
                     // Update hover cursor
                     const sid = posterParamRef.current.selectedId;
                     const ts2 = posterParamRef.current.texts || [];
@@ -3030,8 +3070,8 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                       setPosterTexts(prev => prev.map(t => t.id === id ? { ...t, x: Math.round(origX + gx - startGX), y: Math.round(origY + gy - startGY) } : t));
                     }
                   }}
-                  onMouseUp={() => { posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; }}
-                  onMouseLeave={() => { posterMouseRef.current.over = false; posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; }}
+                  onMouseUp={() => { posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; posterImgResizeRef.current = null; }}
+                  onMouseLeave={() => { posterMouseRef.current.over = false; posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; posterImgResizeRef.current = null; }}
                   onMouseEnter={() => { posterMouseRef.current.over = true; }}
                 />
               </div>
