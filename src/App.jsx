@@ -2225,6 +2225,12 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   const [isPosterRecording, setIsPosterRecording] = useState(false);
   const posterMediaRecorderRef = useRef(null);
   const posterRecordedChunksRef = useRef([]);
+  const [posterImgs, setPosterImgs] = useState([]);
+  const [posterImgNextId, setPosterImgNextId] = useState(0);
+  const [posterSelectedImgId, setPosterSelectedImgId] = useState(null);
+  const posterImgsRef = useRef([]);
+  const posterImgElemsRef = useRef({});
+  posterImgsRef.current = posterImgs;
 
   const posterCanvasRef   = useRef(null);
   const posterParamRef    = useRef({});
@@ -2285,6 +2291,22 @@ function addClip(id,dataUrl,mediaType,filter,mix){
           fm.getContext("2d").fillRect(0, 0, fm.width, fm.height);
           drawMediaOverlay(c, overlayMediaRef.current, fm, eo, eb);
         }
+        // Draw poster images
+        { const ctx2 = c.getContext("2d");
+          for (const pi of posterImgsRef.current) {
+            const imgEl = posterImgElemsRef.current[pi.id];
+            if (!imgEl || !imgEl.complete) continue;
+            ctx2.save(); ctx2.globalAlpha = pi.opacity ?? 1; ctx2.globalCompositeOperation = pi.blend ?? "source-over";
+            ctx2.drawImage(imgEl, pi.x * cs, pi.y * cs, pi.w * cs, pi.h * cs);
+            ctx2.restore();
+          }
+          const selImg = posterImgsRef.current.find(pi => pi.id === posterParamRef.current.selectedImgId);
+          if (selImg) {
+            ctx2.save(); ctx2.strokeStyle = "#c8a96e"; ctx2.lineWidth = 2; ctx2.setLineDash([4, 4]);
+            ctx2.strokeRect(selImg.x * cs, selImg.y * cs, selImg.w * cs, selImg.h * cs);
+            ctx2.setLineDash([]); ctx2.restore();
+          }
+        }
         drawPosterSelectionHighlight(c, ts, sid, cs);
         if (tool === "brush" && posterMouseRef.current.over) {
           const ctx = c.getContext("2d");
@@ -2341,6 +2363,29 @@ function addClip(id,dataUrl,mediaType,filter,mix){
     ctx.globalCompositeOperation = "source-over";
     posterParamRef.current.dirty = true;
   }
+  function addPosterImg(file) {
+    if (!file) return;
+    const id = posterImgNextId; setPosterImgNextId(id + 1);
+    const blobUrl = URL.createObjectURL(file);
+    const imgEl = new Image();
+    imgEl.onload = () => {
+      const aspect = imgEl.naturalWidth / imgEl.naturalHeight;
+      const w = 30; const h = Math.round(w / aspect);
+      posterImgElemsRef.current[id] = imgEl;
+      setPosterImgs(prev => [...prev, { id, blobUrl, x: 5, y: 5, w, h, opacity: 1, blend: "source-over" }]);
+      setPosterSelectedImgId(id);
+      posterParamRef.current.selectedImgId = id;
+      posterParamRef.current.dirty = true;
+    };
+    imgEl.src = blobUrl;
+  }
+  function removePosterImg(id) {
+    URL.revokeObjectURL(posterImgs.find(pi => pi.id === id)?.blobUrl);
+    delete posterImgElemsRef.current[id];
+    setPosterImgs(prev => prev.filter(pi => pi.id !== id));
+    if (posterSelectedImgId === id) { setPosterSelectedImgId(null); posterParamRef.current.selectedImgId = null; }
+    posterParamRef.current.dirty = true;
+  }
   function addPosterText() {
     const id = posterNextId; setPosterNextId(id + 1);
     setPosterTexts(prev => [...prev, { id, content: "New text", fontSize: 18, fontFamily: "serif", bold: false, x: 8, y: 8, knit: true, opacity: 1, blend: "source-over", color: null, glow: 0 }]);
@@ -2365,6 +2410,16 @@ function addClip(id,dataUrl,mediaType,filter,mix){
       scaledMask.width = print.width; scaledMask.height = print.height;
       scaledMask.getContext("2d").drawImage(posterMaskRef.current, 0, 0, print.width, print.height);
       drawMediaOverlay(print, posterMediaRef.current, scaledMask, opacity, blend);
+    }
+    // Draw poster images at 3x scale
+    { const pctx = print.getContext("2d");
+      for (const pi of posterImgs) {
+        const imgEl = posterImgElemsRef.current[pi.id];
+        if (!imgEl || !imgEl.complete) continue;
+        pctx.save(); pctx.globalAlpha = pi.opacity ?? 1; pctx.globalCompositeOperation = pi.blend ?? "source-over";
+        pctx.drawImage(imgEl, pi.x * cs * 3, pi.y * cs * 3, pi.w * cs * 3, pi.h * cs * 3);
+        pctx.restore();
+      }
     }
     let out = print;
     if (editInvert) {
@@ -2925,12 +2980,21 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                         e.preventDefault(); return;
                       }
                     }
-                    // Then check move
+                    // Check image drag
+                    for (let i = posterImgsRef.current.length - 1; i >= 0; i--) {
+                      const pi = posterImgsRef.current[i];
+                      if (gx >= pi.x && gx <= pi.x + pi.w && gy >= pi.y && gy <= pi.y + pi.h) {
+                        setPosterSelectedImgId(pi.id); posterParamRef.current.selectedImgId = pi.id;
+                        posterDragRef.current = { type: "img", id: pi.id, startGX: gx, startGY: gy, origX: pi.x, origY: pi.y };
+                        posterParamRef.current.dirty = true; return;
+                      }
+                    }
+                    // Then check text move
                     for (let i = ts.length - 1; i >= 0; i--) {
                       const t = ts[i]; const b = getPosterTextBounds(t); const hit = 4 / cs;
                       if (gx >= b.x - hit && gx <= b.x + b.w + hit && gy >= b.y - hit && gy <= b.y + b.h + hit) {
                         setPosterSelectedId(t.id);
-                        posterDragRef.current = { id: t.id, startGX: gx, startGY: gy, origX: t.x, origY: t.y };
+                        posterDragRef.current = { type: "text", id: t.id, startGX: gx, startGY: gy, origX: t.x, origY: t.y };
                         return;
                       }
                     }
@@ -2958,8 +3022,13 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                     setPosterCursor(onHandle ? "se-resize" : posterDragRef.current ? "grabbing" : sel ? "grab" : "default");
                     // Move
                     if (!posterDragRef.current) return;
-                    const { id, startGX, startGY, origX, origY } = posterDragRef.current;
-                    setPosterTexts(prev => prev.map(t => t.id === id ? { ...t, x: Math.round(origX + gx - startGX), y: Math.round(origY + gy - startGY) } : t));
+                    const { type, id, startGX, startGY, origX, origY } = posterDragRef.current;
+                    if (type === "img") {
+                      setPosterImgs(prev => prev.map(pi => pi.id === id ? { ...pi, x: Math.round(origX + gx - startGX), y: Math.round(origY + gy - startGY) } : pi));
+                      posterParamRef.current.dirty = true;
+                    } else {
+                      setPosterTexts(prev => prev.map(t => t.id === id ? { ...t, x: Math.round(origX + gx - startGX), y: Math.round(origY + gy - startGY) } : t));
+                    }
                   }}
                   onMouseUp={() => { posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; }}
                   onMouseLeave={() => { posterMouseRef.current.over = false; posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; }}
@@ -3101,6 +3170,52 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                   </label>
                 </div>
               )}
+            </div>
+
+            {/* Poster image layers */}
+            <div style={{ background: "#1a1610", border: "1px solid #3a2e20", borderRadius: 14, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 12, color: "#a07040", letterSpacing: 1 }}>IMAGE LAYERS</div>
+                <label style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, cursor: "pointer", border: "1px solid #c8a96e", color: "#c8a96e" }}>
+                  + add
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" style={{ display: "none" }}
+                    onChange={e => { addPosterImg(e.target.files?.[0]); e.target.value = ""; }} />
+                </label>
+              </div>
+              {posterImgs.map(pi => (
+                <div key={pi.id} style={{ marginBottom: 8, padding: "8px", borderRadius: 8,
+                  background: pi.id === posterSelectedImgId ? "rgba(200,169,110,0.12)" : "rgba(255,255,255,0.03)",
+                  border: `1px solid ${pi.id === posterSelectedImgId ? "#c8a96e" : "#2e2416"}`, cursor: "pointer" }}
+                  onClick={() => { setPosterSelectedImgId(pi.id); posterParamRef.current.selectedImgId = pi.id; posterParamRef.current.dirty = true; }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                    <img src={pi.blobUrl} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4 }} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+                      <label style={{ fontSize: 11, color: "#a07040" }}>
+                        opacity — {Math.round(pi.opacity * 100)}%
+                        <input type="range" min={0} max={1} step={0.01} value={pi.opacity}
+                          onChange={e => { setPosterImgs(prev => prev.map(p => p.id === pi.id ? { ...p, opacity: Number(e.target.value) } : p)); posterParamRef.current.dirty = true; }}
+                          style={{ display: "block", width: "100%", marginTop: 2 }} />
+                      </label>
+                      <label style={{ fontSize: 11, color: "#a07040" }}>
+                        size — {pi.w}
+                        <input type="range" min={5} max={200} step={1} value={pi.w}
+                          onChange={e => { const w = Number(e.target.value); const imgEl = posterImgElemsRef.current[pi.id]; const h = imgEl ? Math.round(w / (imgEl.naturalWidth / imgEl.naturalHeight)) : pi.h; setPosterImgs(prev => prev.map(p => p.id === pi.id ? { ...p, w, h } : p)); posterParamRef.current.dirty = true; }}
+                          style={{ display: "block", width: "100%", marginTop: 2 }} />
+                      </label>
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); removePosterImg(pi.id); }}
+                      style={{ background: "none", border: "none", color: "#a07040", cursor: "pointer", fontSize: 14, padding: "0 4px" }}>×</button>
+                  </div>
+                  <label style={{ fontSize: 11, color: "#a07040" }}>blend
+                    <select value={pi.blend ?? "source-over"}
+                      onChange={e => { setPosterImgs(prev => prev.map(p => p.id === pi.id ? { ...p, blend: e.target.value } : p)); posterParamRef.current.dirty = true; }}
+                      style={{ marginLeft: 6, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "2px 6px", fontSize: 11 }}>
+                      {["source-over","multiply","screen","overlay","soft-light","hard-light","difference","exclusion"].map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </label>
+                </div>
+              ))}
+              {posterImgs.length === 0 && <div style={{ fontSize: 11, color: "rgba(200,169,110,0.4)" }}>no images — add a PNG to layer on top</div>}
             </div>
 
             {/* Poster overlay brush */}
