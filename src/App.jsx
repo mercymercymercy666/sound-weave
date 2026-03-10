@@ -2271,9 +2271,9 @@ function addClip(id,dataUrl,mediaType,filter,mix){
         posterParamRef.current.fabricLayers = layersRef.current.map(L => ({
           color: L.color, alpha: alphasRef.current[L.id] ?? 0.55, grid01: gridsRef.current[L.id],
         }));
-        // Only force redraw for live content (video overlay), not just to sync layers
-        if (posterParamRef.current.overlayType === "video") needsDraw = true;
       }
+      // Always redraw — poster mirrors live edit canvas (audio-reactive)
+      needsDraw = true;
       const ot = posterParamRef.current.overlayType;
       const tool = posterParamRef.current.activeTool;
       if (ot === "video" || (tool === "brush" && posterMouseRef.current.over)) needsDraw = true;
