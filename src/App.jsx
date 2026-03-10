@@ -1726,7 +1726,6 @@ export default function App() {
   }, [ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode]);
 
   editInvertRef.current = editInvert; // inline — always current before RAF reads it
-  isPosterRecordingRef.current = isPosterRecording;
 
   // Sync perform window background with editInvert
   useEffect(() => {
@@ -1737,10 +1736,12 @@ export default function App() {
     }
   }, [editInvert, performOpen]);
 
-  // Brush undo — Ctrl+Z restores last mask snapshot
+  // Ctrl+Z: undo brush stroke (edit canvas) or poster design (poster panel)
   useEffect(() => {
     const handler = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undoBrushStroke(); }
+      if (!(e.ctrlKey || e.metaKey) || e.key !== "z") return;
+      e.preventDefault();
+      if (posterHistoryRef.current.length > 0) { undoPoster(); } else { undoBrushStroke(); }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
@@ -2233,10 +2234,26 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   const posterImgElemsRef = useRef({});
   const posterImgResizeRef = useRef(null); // { id, handle, origX, origY, origW, origH, startGX, startGY }
   posterImgsRef.current = posterImgs;
+  const posterHistoryRef = useRef([]);
+  function pushPosterHistory() {
+    posterHistoryRef.current.push({
+      texts: JSON.parse(JSON.stringify(posterTexts)),
+      imgs: posterImgs.map(pi => ({ ...pi })),
+    });
+    if (posterHistoryRef.current.length > 60) posterHistoryRef.current.shift();
+  }
+  function undoPoster() {
+    if (posterHistoryRef.current.length === 0) return;
+    const prev = posterHistoryRef.current.pop();
+    setPosterTexts(prev.texts);
+    setPosterImgs(prev.imgs);
+    posterParamRef.current.dirty = true;
+  }
 
   const posterCanvasRef   = useRef(null);
   const posterParamRef    = useRef({});
   const isPosterRecordingRef = useRef(false);
+  isPosterRecordingRef.current = isPosterRecording;
   const posterRecordCanvasRef = useRef(null);
   const posterDragRef     = useRef(null);
   const posterResizeRef   = useRef(null); // { id, origFontSize, startGY }
@@ -2399,6 +2416,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
     posterParamRef.current.dirty = true;
   }
   function addPosterImg(file) {
+    pushPosterHistory();
     if (!file) return;
     const id = posterImgNextId; setPosterImgNextId(id + 1);
     const blobUrl = URL.createObjectURL(file);
@@ -2415,6 +2433,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
     imgEl.src = blobUrl;
   }
   function removePosterImg(id) {
+    pushPosterHistory();
     URL.revokeObjectURL(posterImgs.find(pi => pi.id === id)?.blobUrl);
     delete posterImgElemsRef.current[id];
     setPosterImgs(prev => prev.filter(pi => pi.id !== id));
@@ -2422,17 +2441,23 @@ function addClip(id,dataUrl,mediaType,filter,mix){
     posterParamRef.current.dirty = true;
   }
   function addPosterText() {
+    pushPosterHistory();
     const id = posterNextId; setPosterNextId(id + 1);
     setPosterTexts(prev => [...prev, { id, content: "New text", fontSize: 18, fontFamily: "serif", bold: false, x: 8, y: 8, knit: true, opacity: 1, blend: "source-over", color: null, glow: 0 }]);
     setPosterSelectedId(id);
   }
   function removePosterText(id) {
+    pushPosterHistory();
     setPosterTexts(prev => prev.filter(t => t.id !== id));
     setPosterSelectedId(prev => prev === id ? null : prev);
   }
   function updatePosterSelected(patch) {
     if (posterSelectedId === null) return;
     setPosterTexts(prev => prev.map(t => t.id === posterSelectedId ? { ...t, ...patch } : t));
+  }
+  function commitPosterSelected(patch) {
+    pushPosterHistory();
+    updatePosterSelected(patch);
   }
   function exportPosterPNG() {
     const { cell: cs = 5, staveCount: sc = 8, notationSeed: ns = 42, fabricLayers, fabricInvert: fi = false,
@@ -3032,6 +3057,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                     if (sid != null) {
                       const sel = ts.find(t => t.id === sid);
                       if (sel && hitPosterResizeHandle(sel, gx, gy, cs)) {
+                        pushPosterHistory();
                         posterResizeRef.current = { id: sel.id, origFontSize: sel.fontSize, startGY: gy };
                         e.preventDefault(); return;
                       }
@@ -3051,6 +3077,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                         ];
                         for (const [handle, hx, hy] of handles) {
                           if (Math.abs(gx - hx) <= hr && Math.abs(gy - hy) <= hr) {
+                            pushPosterHistory();
                             posterImgResizeRef.current = { id: selImg.id, handle, origX: selImg.x, origY: selImg.y, origW: selImg.w, origH: selImg.h, startGX: gx, startGY: gy };
                             e.preventDefault(); return;
                           }
@@ -3061,6 +3088,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                     for (let i = posterImgsRef.current.length - 1; i >= 0; i--) {
                       const pi = posterImgsRef.current[i];
                       if (gx >= pi.x && gx <= pi.x + pi.w && gy >= pi.y && gy <= pi.y + pi.h) {
+                        pushPosterHistory();
                         setPosterSelectedImgId(pi.id); posterParamRef.current.selectedImgId = pi.id;
                         posterDragRef.current = { type: "img", id: pi.id, startGX: gx, startGY: gy, origX: pi.x, origY: pi.y };
                         posterParamRef.current.dirty = true; return;
@@ -3070,6 +3098,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                     for (let i = ts.length - 1; i >= 0; i--) {
                       const t = ts[i]; const b = getPosterTextBounds(t); const hit = 4 / cs;
                       if (gx >= b.x - hit && gx <= b.x + b.w + hit && gy >= b.y - hit && gy <= b.y + b.h + hit) {
+                        pushPosterHistory();
                         setPosterSelectedId(t.id);
                         posterDragRef.current = { type: "text", id: t.id, startGX: gx, startGY: gy, origX: t.x, origY: t.y };
                         return;
@@ -3197,17 +3226,19 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #2e2416", display: "flex", flexDirection: "column", gap: 8 }}>
                   <textarea value={posterSelected.content}
                     onChange={(e) => updatePosterSelected({ content: e.target.value })}
+                    onBlur={(e) => commitPosterSelected({ content: e.target.value })}
                     style={{ width: "100%", height: 60, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 6, padding: 6, fontSize: 12, boxSizing: "border-box", resize: "vertical" }} />
                   <label style={{ fontSize: 11, color: "#a07040", display: "block" }}>
                     font size — {posterSelected.fontSize}px
                     <input type="range" min={4} max={120} value={posterSelected.fontSize}
+                      onPointerDown={pushPosterHistory}
                       onChange={(e) => updatePosterSelected({ fontSize: Number(e.target.value) })}
                       style={{ marginTop: 3, display: "block", width: "100%" }} />
                   </label>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                     <div />
                     <label style={{ fontSize: 11, color: "#a07040", display: "block" }}>font
-                      <select value={posterSelected.fontFamily} onChange={(e) => updatePosterSelected({ fontFamily: e.target.value })}
+                      <select value={posterSelected.fontFamily} onChange={(e) => commitPosterSelected({ fontFamily: e.target.value })}
                         style={{ marginTop: 3, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 12, width: "100%", boxSizing: "border-box" }}>
                         {POSTER_FONTS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                       </select>
@@ -3215,22 +3246,22 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
                     <label style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 11, color: "#a07040", cursor: "pointer" }}>
-                      <input type="checkbox" checked={posterSelected.bold ?? false} onChange={(e) => updatePosterSelected({ bold: e.target.checked })} />
+                      <input type="checkbox" checked={posterSelected.bold ?? false} onChange={(e) => commitPosterSelected({ bold: e.target.checked })} />
                       bold
                     </label>
                     <label style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 11, color: "#a07040", cursor: "pointer" }}>
-                      <input type="checkbox" checked={posterSelected.knit !== false} onChange={(e) => updatePosterSelected({ knit: e.target.checked })} />
+                      <input type="checkbox" checked={posterSelected.knit !== false} onChange={(e) => commitPosterSelected({ knit: e.target.checked })} />
                       knit style
                     </label>
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <label style={{ fontSize: 11, color: "#a07040", display: "flex", alignItems: "center", gap: 5 }}>
                       <input type="checkbox" checked={posterSelected.color != null}
-                        onChange={e => updatePosterSelected({ color: e.target.checked ? "#c8a96e" : null })} />
+                        onChange={e => commitPosterSelected({ color: e.target.checked ? "#c8a96e" : null })} />
                       color
                       {posterSelected.color != null && (
                         <input type="color" value={posterSelected.color}
-                          onChange={e => updatePosterSelected({ color: e.target.value })}
+                          onChange={e => commitPosterSelected({ color: e.target.value })}
                           style={{ width: 28, height: 20, cursor: "pointer", padding: 1, borderRadius: 4, border: "none" }} />
                       )}
                     </label>
@@ -3238,6 +3269,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                   <label style={{ fontSize: 11, color: "#a07040" }}>
                     glow — {posterSelected.glow ?? 0}
                     <input type="range" min={0} max={20} step={0.5} value={posterSelected.glow ?? 0}
+                      onPointerDown={pushPosterHistory}
                       onChange={(e) => updatePosterSelected({ glow: Number(e.target.value) })}
                       style={{ display: "block", width: "100%", marginTop: 3 }} />
                   </label>
@@ -3246,13 +3278,14 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                       <label style={{ fontSize: 11, color: "#a07040", flex: 1 }}>
                         cell bg — {Math.round((posterSelected.bgOpacity ?? 0) * 100)}%
                         <input type="range" min={0} max={1} step={0.01} value={posterSelected.bgOpacity ?? 0}
+                          onPointerDown={pushPosterHistory}
                           onChange={(e) => updatePosterSelected({ bgOpacity: Number(e.target.value) })}
                           style={{ display: "block", width: "100%", marginTop: 3 }} />
                       </label>
                       <label style={{ fontSize: 11, color: "#a07040" }}>
                         color
                         <input type="color" value={posterSelected.bgColor ?? "#fdf3e7"}
-                          onChange={e => updatePosterSelected({ bgColor: e.target.value })}
+                          onChange={e => commitPosterSelected({ bgColor: e.target.value })}
                           style={{ display: "block", width: 28, height: 20, cursor: "pointer", padding: 1, borderRadius: 4, border: "none", marginTop: 3 }} />
                       </label>
                     </div>
@@ -3260,12 +3293,13 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                   <label style={{ fontSize: 11, color: "#a07040" }}>
                     opacity — {Math.round((posterSelected.opacity ?? 1) * 100)}%
                     <input type="range" min={0} max={1} step={0.01} value={posterSelected.opacity ?? 1}
+                      onPointerDown={pushPosterHistory}
                       onChange={(e) => updatePosterSelected({ opacity: Number(e.target.value) })}
                       style={{ display: "block", width: "100%", marginTop: 3 }} />
                   </label>
                   <label style={{ fontSize: 11, color: "#a07040" }}>blend
                     <select value={posterSelected.blend ?? "source-over"}
-                      onChange={(e) => updatePosterSelected({ blend: e.target.value })}
+                      onChange={(e) => commitPosterSelected({ blend: e.target.value })}
                       style={{ marginTop: 3, display: "block", background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "3px 6px", fontSize: 11 }}>
                       {["source-over","multiply","screen","overlay","soft-light","hard-light","color-burn","difference","exclusion"].map(b => (
                         <option key={b} value={b}>{b}</option>
@@ -3297,12 +3331,14 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                       <label style={{ fontSize: 11, color: "#a07040" }}>
                         opacity — {Math.round(pi.opacity * 100)}%
                         <input type="range" min={0} max={1} step={0.01} value={pi.opacity}
+                          onPointerDown={pushPosterHistory}
                           onChange={e => { setPosterImgs(prev => prev.map(p => p.id === pi.id ? { ...p, opacity: Number(e.target.value) } : p)); posterParamRef.current.dirty = true; }}
                           style={{ display: "block", width: "100%", marginTop: 2 }} />
                       </label>
                       <label style={{ fontSize: 11, color: "#a07040" }}>
                         size — {pi.w}
                         <input type="range" min={5} max={200} step={1} value={pi.w}
+                          onPointerDown={pushPosterHistory}
                           onChange={e => { const w = Number(e.target.value); const imgEl = posterImgElemsRef.current[pi.id]; const h = imgEl ? Math.round(w / (imgEl.naturalWidth / imgEl.naturalHeight)) : pi.h; setPosterImgs(prev => prev.map(p => p.id === pi.id ? { ...p, w, h } : p)); posterParamRef.current.dirty = true; }}
                           style={{ display: "block", width: "100%", marginTop: 2 }} />
                       </label>
@@ -3312,7 +3348,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                   </div>
                   <label style={{ fontSize: 11, color: "#a07040" }}>blend
                     <select value={pi.blend ?? "source-over"}
-                      onChange={e => { setPosterImgs(prev => prev.map(p => p.id === pi.id ? { ...p, blend: e.target.value } : p)); posterParamRef.current.dirty = true; }}
+                      onChange={e => { pushPosterHistory(); setPosterImgs(prev => prev.map(p => p.id === pi.id ? { ...p, blend: e.target.value } : p)); posterParamRef.current.dirty = true; }}
                       style={{ marginLeft: 6, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 5, padding: "2px 6px", fontSize: 11 }}>
                       {["source-over","multiply","screen","overlay","soft-light","hard-light","difference","exclusion"].map(b => <option key={b} value={b}>{b}</option>)}
                     </select>
