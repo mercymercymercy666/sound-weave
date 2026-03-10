@@ -1193,7 +1193,7 @@ function drawStaveGroup(ctx, centerRow, gridW, cell, color, seed) {
 
 function drawPoster(canvas, { gridW, gridH, cell, texts, fabricLayers, fabricInvert, staveCount, notationSeed, bgImg = null, sourceCanvas = null, posterLayerAlpha = 1 }) {
   const W = gridW * cell; const H = gridH * cell;
-  canvas.width = W; canvas.height = H;
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   const BG          = fabricInvert ? "#16121e" : "#fdf3e7";
@@ -1726,6 +1726,7 @@ export default function App() {
   }, [ovActiveTool, ovType, ovBlend, ovOpacity, ovBrushSize, ovBrushMode]);
 
   editInvertRef.current = editInvert; // inline — always current before RAF reads it
+  isPosterRecordingRef.current = isPosterRecording;
 
   // Sync perform window background with editInvert
   useEffect(() => {
@@ -2235,6 +2236,8 @@ function addClip(id,dataUrl,mediaType,filter,mix){
 
   const posterCanvasRef   = useRef(null);
   const posterParamRef    = useRef({});
+  const isPosterRecordingRef = useRef(false);
+  const posterRecordCanvasRef = useRef(null);
   const posterDragRef     = useRef(null);
   const posterResizeRef   = useRef(null); // { id, origFontSize, startGY }
   const posterMaskRef     = useRef(null);
@@ -2323,6 +2326,30 @@ function addClip(id,dataUrl,mediaType,filter,mix){
           ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
           ctx.beginPath(); ctx.arc(posterMouseRef.current.x, posterMouseRef.current.y, posterParamRef.current.brushSize * cs, 0, Math.PI * 2); ctx.stroke();
           ctx.setLineDash([]); ctx.restore();
+        }
+        // Pixel-level invert for recording (CSS filter doesn't affect captureStream)
+        if (editInvertRef.current) {
+          const ictx = c.getContext("2d");
+          ictx.save(); ictx.globalCompositeOperation = "difference"; ictx.fillStyle = "#ffffff";
+          ictx.fillRect(0, 0, c.width, c.height); ictx.restore();
+        }
+        // High-res 3x record canvas
+        if (isPosterRecordingRef.current && posterRecordCanvasRef.current) {
+          const rc = posterRecordCanvasRef.current;
+          const rcs = cs * 3;
+          drawPoster(rc, { gridW: gw, gridH: gh, cell: rcs, texts: ts, fabricLayers: fabricLayers ?? null, fabricInvert: fi, staveCount: sc, notationSeed: ns, bgImg: bgImgRef.current, sourceCanvas: canvasRef.current, posterLayerAlpha: pla });
+          const rctx = rc.getContext("2d");
+          for (const pi of posterImgsRef.current) {
+            const imgEl = posterImgElemsRef.current[pi.id];
+            if (!imgEl || !imgEl.complete) continue;
+            rctx.save(); rctx.globalAlpha = pi.opacity ?? 1; rctx.globalCompositeOperation = pi.blend ?? "source-over";
+            rctx.drawImage(imgEl, pi.x * rcs, pi.y * rcs, pi.w * rcs, pi.h * rcs);
+            rctx.restore();
+          }
+          if (editInvertRef.current) {
+            rctx.save(); rctx.globalCompositeOperation = "difference"; rctx.fillStyle = "#ffffff";
+            rctx.fillRect(0, 0, rc.width, rc.height); rctx.restore();
+          }
         }
       }
       raf = requestAnimationFrame(step);
@@ -2444,7 +2471,13 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   function startPosterRecording() {
     const c = posterCanvasRef.current; if (!c) return;
     posterRecordedChunksRef.current = [];
-    const combined = new MediaStream(c.captureStream(30).getVideoTracks());
+    // Create high-res 3x record canvas
+    const { cell: cs = 5, gridW: gw = colsRef.current, gridH: gh = rowsRef.current } = posterParamRef.current;
+    const rc = document.createElement("canvas");
+    rc.width = gw * cs * 3; rc.height = gh * cs * 3;
+    posterRecordCanvasRef.current = rc;
+    isPosterRecordingRef.current = true;
+    const combined = new MediaStream(rc.captureStream(30).getVideoTracks());
     const rawStreams = [];
     if (modes.A === "mic" && audioA.streamRef.current) rawStreams.push(audioA.streamRef.current);
     [[audioRefB,"B"],[audioRefC,"C"],[audioRefD,"D"],[audioRefF,"F"],[audioRefG,"G"],[audioRefH,"H"]].forEach(([ref,id]) => {
@@ -2478,6 +2511,8 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   }
 
   function stopPosterRecording() {
+    isPosterRecordingRef.current = false;
+    posterRecordCanvasRef.current = null;
     posterMediaRecorderRef.current?.stop();
     setIsPosterRecording(false);
   }
@@ -2984,7 +3019,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
               {/* Poster canvas — drag to move texts, brush to paint overlay */}
               <div style={{ overflow: "auto", borderRadius: 8, lineHeight: 0, border: "1px solid #3a2e20" }}>
                 <canvas ref={posterCanvasRef}
-                  style={{ display: "block", cursor: posterActiveTool === "brush" && posterOvType ? "crosshair" : posterCursor, filter: editInvert ? "invert(1)" : "none" }}
+                  style={{ display: "block", cursor: posterActiveTool === "brush" && posterOvType ? "crosshair" : posterCursor, filter: "none" }}
                   onMouseDown={(e) => {
                     const tool = posterParamRef.current.activeTool;
                     if (tool === "brush" && posterParamRef.current.overlayType) { posterIsPaintingRef.current = true; posterPaintAt(e.clientX, e.clientY); return; }
