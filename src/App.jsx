@@ -1979,15 +1979,18 @@ export default function App() {
       } catch (e) { console.warn("Audio mix failed:", e); }
     }
 
-    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-      ? "video/webm;codecs=vp9" : "video/webm";
+    const mimeType = MediaRecorder.isTypeSupported("video/mp4")
+      ? "video/mp4"
+      : MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+        ? "video/webm;codecs=vp9,opus" : "video/webm";
     const mr = new MediaRecorder(combined, { mimeType });
     mr.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
     mr.onstop = () => {
-      const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
+      const isMP4 = mimeType.startsWith("video/mp4");
+      const blob = new Blob(recordedChunksRef.current, { type: mimeType });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `weave_${cols}x${rows}.webm`;
+      a.download = `weave_${cols}x${rows}.${isMP4 ? "mp4" : "webm"}`;
       a.click();
     };
     mr.start();
@@ -2516,10 +2519,10 @@ function addClip(id,dataUrl,mediaType,filter,mix){
         dest.stream.getAudioTracks().forEach(t => combined.addTrack(t));
       } catch (e) { console.warn("Audio mix failed:", e); }
     }
-    const mimeType = MediaRecorder.isTypeSupported("video/mp4;codecs=avc1")
-      ? "video/mp4;codecs=avc1"
-      : MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-        ? "video/webm;codecs=vp9" : "video/webm";
+    const mimeType = MediaRecorder.isTypeSupported("video/mp4")
+      ? "video/mp4"
+      : MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+        ? "video/webm;codecs=vp9,opus" : "video/webm";
     const mr = new MediaRecorder(combined, { mimeType });
     mr.ondataavailable = (e) => { if (e.data.size > 0) posterRecordedChunksRef.current.push(e.data); };
     mr.onstop = () => {
