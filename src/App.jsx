@@ -2271,7 +2271,8 @@ function addClip(id,dataUrl,mediaType,filter,mix){
         posterParamRef.current.fabricLayers = layersRef.current.map(L => ({
           color: L.color, alpha: alphasRef.current[L.id] ?? 0.55, grid01: gridsRef.current[L.id],
         }));
-        needsDraw = true;
+        // Only force redraw for live content (video overlay), not just to sync layers
+        if (posterParamRef.current.overlayType === "video") needsDraw = true;
       }
       const ot = posterParamRef.current.overlayType;
       const tool = posterParamRef.current.activeTool;
@@ -3035,14 +3036,14 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                     if (posterIsPaintingRef.current && posterParamRef.current.activeTool === "brush") { posterPaintAt(e.clientX, e.clientY); return; }
                     const gx = (e.clientX - rect.left) / cs;
                     const gy = (e.clientY - rect.top) / cs;
-                    // Resize
+                    // Text resize — mutate ref, commit on mouseUp
                     if (posterResizeRef.current) {
                       const { id, origFontSize, startGY } = posterResizeRef.current;
                       const newSize = Math.max(4, Math.round(origFontSize + (gy - startGY)));
-                      setPosterTexts(prev => prev.map(t => t.id === id ? { ...t, fontSize: newSize } : t));
-                      return;
+                      posterParamRef.current.texts = (posterParamRef.current.texts || []).map(t => t.id === id ? { ...t, fontSize: newSize } : t);
+                      posterParamRef.current.dirty = true; return;
                     }
-                    // Image resize
+                    // Image resize — mutate ref, commit on mouseUp
                     if (posterImgResizeRef.current) {
                       const { id, handle, origX, origY, origW, origH, startGX, startGY } = posterImgResizeRef.current;
                       const dx = gx - startGX, dy = gy - startGY;
@@ -3051,27 +3052,42 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                       if (handle.includes("w")) { nw = Math.max(2, origW - dx); nx = origX + origW - nw; }
                       if (handle.includes("s")) { nh = Math.max(2, origH + dy); }
                       if (handle.includes("n")) { nh = Math.max(2, origH - dy); ny = origY + origH - nh; }
-                      setPosterImgs(prev => prev.map(pi => pi.id === id ? { ...pi, x: Math.round(nx), y: Math.round(ny), w: Math.round(nw), h: Math.round(nh) } : pi));
+                      posterImgsRef.current = posterImgsRef.current.map(pi => pi.id === id ? { ...pi, x: Math.round(nx), y: Math.round(ny), w: Math.round(nw), h: Math.round(nh) } : pi);
                       posterParamRef.current.dirty = true; return;
                     }
-                    // Update hover cursor
+                    // Update hover cursor — only setState when value changes
                     const sid = posterParamRef.current.selectedId;
                     const ts2 = posterParamRef.current.texts || [];
                     const sel = sid != null ? ts2.find(t => t.id === sid) : null;
                     const onHandle = sel ? hitPosterResizeHandle(sel, gx, gy, cs) : false;
-                    setPosterCursor(onHandle ? "se-resize" : posterDragRef.current ? "grabbing" : sel ? "grab" : "default");
-                    // Move
+                    const newCursor = onHandle ? "se-resize" : posterDragRef.current ? "grabbing" : posterImgResizeRef.current ? "crosshair" : sel ? "grab" : "default";
+                    if (newCursor !== posterParamRef.current._cursor) { posterParamRef.current._cursor = newCursor; setPosterCursor(newCursor); }
+                    // Move — mutate refs, commit on mouseUp
                     if (!posterDragRef.current) return;
                     const { type, id, startGX, startGY, origX, origY } = posterDragRef.current;
                     if (type === "img") {
-                      setPosterImgs(prev => prev.map(pi => pi.id === id ? { ...pi, x: Math.round(origX + gx - startGX), y: Math.round(origY + gy - startGY) } : pi));
+                      posterImgsRef.current = posterImgsRef.current.map(pi => pi.id === id ? { ...pi, x: Math.round(origX + gx - startGX), y: Math.round(origY + gy - startGY) } : pi);
                       posterParamRef.current.dirty = true;
                     } else {
-                      setPosterTexts(prev => prev.map(t => t.id === id ? { ...t, x: Math.round(origX + gx - startGX), y: Math.round(origY + gy - startGY) } : t));
+                      posterParamRef.current.texts = (posterParamRef.current.texts || []).map(t => t.id === id ? { ...t, x: Math.round(origX + gx - startGX), y: Math.round(origY + gy - startGY) } : t);
+                      posterParamRef.current.dirty = true;
                     }
                   }}
-                  onMouseUp={() => { posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; posterImgResizeRef.current = null; }}
-                  onMouseLeave={() => { posterMouseRef.current.over = false; posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; posterImgResizeRef.current = null; }}
+                  onMouseUp={() => {
+                    // Commit ref mutations to state
+                    if (posterResizeRef.current || posterDragRef.current?.type === "text")
+                      setPosterTexts([...(posterParamRef.current.texts || [])]);
+                    if (posterImgResizeRef.current || posterDragRef.current?.type === "img")
+                      setPosterImgs([...posterImgsRef.current]);
+                    posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; posterImgResizeRef.current = null;
+                  }}
+                  onMouseLeave={() => {
+                    if (posterResizeRef.current || posterDragRef.current?.type === "text")
+                      setPosterTexts([...(posterParamRef.current.texts || [])]);
+                    if (posterImgResizeRef.current || posterDragRef.current?.type === "img")
+                      setPosterImgs([...posterImgsRef.current]);
+                    posterMouseRef.current.over = false; posterIsPaintingRef.current = false; posterDragRef.current = null; posterResizeRef.current = null; posterImgResizeRef.current = null;
+                  }}
                   onMouseEnter={() => { posterMouseRef.current.over = true; }}
                 />
               </div>
