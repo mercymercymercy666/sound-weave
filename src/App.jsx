@@ -2233,7 +2233,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   const posterImgsRef = useRef([]);
   const posterImgElemsRef = useRef({});
   const posterImgResizeRef = useRef(null); // { id, handle, origX, origY, origW, origH, startGX, startGY }
-  posterImgsRef.current = posterImgs;
+  if (!posterDragRef.current && !posterImgResizeRef.current) posterImgsRef.current = posterImgs;
   const posterHistoryRef = useRef([]);
   function pushPosterHistory() {
     posterHistoryRef.current.push({
