@@ -2444,12 +2444,25 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   function startPosterRecording() {
     const c = posterCanvasRef.current; if (!c) return;
     posterRecordedChunksRef.current = [];
-    const stream = c.captureStream(30);
+    const combined = new MediaStream(c.captureStream(30).getVideoTracks());
+    const rawStreams = [];
+    if (modes.A === "mic" && audioA.streamRef.current) rawStreams.push(audioA.streamRef.current);
+    [[audioRefB,"B"],[audioRefC,"C"],[audioRefD,"D"],[audioRefF,"F"],[audioRefG,"G"],[audioRefH,"H"]].forEach(([ref,id]) => {
+      if (modes[id] === "file" && ref.current?.captureStream) { try { rawStreams.push(ref.current.captureStream()); } catch {} }
+    });
+    if (rawStreams.length > 0) {
+      try {
+        const mixCtx = new AudioContext();
+        const dest = mixCtx.createMediaStreamDestination();
+        rawStreams.forEach(s => mixCtx.createMediaStreamSource(s).connect(dest));
+        dest.stream.getAudioTracks().forEach(t => combined.addTrack(t));
+      } catch (e) { console.warn("Audio mix failed:", e); }
+    }
     const mimeType = MediaRecorder.isTypeSupported("video/mp4;codecs=avc1")
       ? "video/mp4;codecs=avc1"
       : MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
         ? "video/webm;codecs=vp9" : "video/webm";
-    const mr = new MediaRecorder(stream, { mimeType });
+    const mr = new MediaRecorder(combined, { mimeType });
     mr.ondataavailable = (e) => { if (e.data.size > 0) posterRecordedChunksRef.current.push(e.data); };
     mr.onstop = () => {
       const isMP4 = mimeType.startsWith("video/mp4");
