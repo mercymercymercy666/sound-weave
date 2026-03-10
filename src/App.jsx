@@ -1739,9 +1739,27 @@ export default function App() {
   // Ctrl+Z: undo brush stroke (edit canvas) or poster design (poster panel)
   useEffect(() => {
     const handler = (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key !== "z") return;
-      e.preventDefault();
-      if (posterHistoryRef.current.length > 0) { undoPoster(); } else { undoBrushStroke(); }
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key === "z") {
+        e.preventDefault();
+        if (posterHistoryRef.current.length > 0) { undoPoster(); } else { undoBrushStroke(); }
+      } else if (e.key === "c") {
+        const sid = posterParamRef.current.selectedId;
+        if (sid == null) return;
+        const t = (posterParamRef.current.texts || []).find(t => t.id === sid);
+        if (t) { e.preventDefault(); posterCopiedTextRef.current = { ...t }; }
+      } else if (e.key === "v") {
+        const copied = posterCopiedTextRef.current;
+        if (!copied) return;
+        e.preventDefault();
+        pushPosterHistory();
+        const id = posterNextIdRef.current;
+        posterNextIdRef.current += 1;
+        setPosterNextId(id + 1);
+        const newText = { ...copied, id, x: copied.x + 2, y: copied.y + 2 };
+        setPosterTexts(prev => [...prev, newText]);
+        setPosterSelectedId(id);
+      }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
@@ -2214,6 +2232,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   ]);
   const [posterSelectedId, setPosterSelectedId] = useState(0);
   const [posterNextId, setPosterNextId] = useState(1);
+  const posterNextIdRef = useRef(1); posterNextIdRef.current = posterNextId;
   const [staveCount, setStaveCount] = useState(8);
   const [notationSeed, setNotationSeed] = useState(42);
   const [posterCell, setPosterCell] = useState(5);
@@ -2237,6 +2256,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   const posterImgElemsRef = useRef({});
   const posterImgResizeRef = useRef(null); // { id, handle, origX, origY, origW, origH, startGX, startGY }
   const posterHistoryRef = useRef([]);
+  const posterCopiedTextRef = useRef(null);
   function pushPosterHistory() {
     posterHistoryRef.current.push({
       texts: JSON.parse(JSON.stringify(posterTexts)),
