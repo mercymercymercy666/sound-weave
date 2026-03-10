@@ -2233,7 +2233,6 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   const posterImgsRef = useRef([]);
   const posterImgElemsRef = useRef({});
   const posterImgResizeRef = useRef(null); // { id, handle, origX, origY, origW, origH, startGX, startGY }
-  if (!posterDragRef.current && !posterImgResizeRef.current) posterImgsRef.current = posterImgs;
   const posterHistoryRef = useRef([]);
   function pushPosterHistory() {
     posterHistoryRef.current.push({
@@ -2256,6 +2255,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
   isPosterRecordingRef.current = isPosterRecording;
   const posterRecordCanvasRef = useRef(null);
   const posterDragRef     = useRef(null);
+  if (!posterDragRef.current && !posterImgResizeRef.current) posterImgsRef.current = posterImgs;
   const posterResizeRef   = useRef(null); // { id, origFontSize, startGY }
   const posterMaskRef     = useRef(null);
   const posterMediaRef    = useRef(null);
