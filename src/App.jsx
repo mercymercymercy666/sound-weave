@@ -2124,7 +2124,7 @@ function addTextBox(){
   var fontSel=document.createElement('select');fontSel.className='txt-sel';
   PERF_FONTS.forEach(function(f){var o=document.createElement('option');o.value=f[0];o.textContent=f[1];fontSel.appendChild(o);});
   // font size
-  var sizeInp=document.createElement('input');sizeInp.type='number';sizeInp.value='48';sizeInp.min='8';sizeInp.max='400';sizeInp.className='txt-sel';sizeInp.style.width='46px';
+  var sizeInp=document.createElement('input');sizeInp.type='number';sizeInp.value='80';sizeInp.min='8';sizeInp.max='400';sizeInp.className='txt-sel';sizeInp.style.width='46px';
   // bold
   var boldBtn=document.createElement('button');boldBtn.className='txt-btn2';boldBtn.textContent='B';boldBtn.style.fontWeight='bold';var isBold=false;
   // color
@@ -2143,7 +2143,7 @@ function addTextBox(){
   div.appendChild(bar);
   // content
   var content=document.createElement('div');content.className='txt-content';content.contentEditable='true';content.spellcheck=false;
-  content.style.cssText='font-family:serif;font-size:48px;color:#fff;line-height:1.15;';
+  content.style.cssText='font-family:serif;font-size:80px;color:#fff;line-height:1.15;';
   content.textContent='Text';
   div.appendChild(content);
   // resize handle
