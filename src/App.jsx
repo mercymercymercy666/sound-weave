@@ -2270,7 +2270,7 @@ function startPerfRecord(mimeType){
   var mt=mimeType||'video/webm';
   _recMR=new MediaRecorder(combined,{mimeType:mt});
   _recMR.ondataavailable=function(e){if(e.data.size>0)_recChunks.push(e.data);};
-  _recMR.onstop=function(){cancelAnimationFrame(_recAnim);var blob=new Blob(_recChunks,{type:mt});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='perform_'+Date.now()+'.'+(mt.startsWith('video/mp4')?'mp4':'webm');a.click();};
+  _recMR.onstop=function(){cancelAnimationFrame(_recAnim);var blob=new Blob(_recChunks,{type:mt});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='perform_'+Date.now()+'.'+(mt.startsWith('video/mp4')?'mp4':'webm');document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1000);};
   _recMR.start();
 }
 function stopPerfRecord(){if(_recMR&&_recMR.state!=='inactive')_recMR.stop();else cancelAnimationFrame(_recAnim);}
