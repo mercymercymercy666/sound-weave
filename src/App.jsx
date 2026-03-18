@@ -2246,7 +2246,7 @@ function saveFrame(){
   });
 }
 function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();['fs','txt-add','save-frame'].forEach(function(id){var o=document.getElementById(id);if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}});}
-document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F')goFS();});
+document.addEventListener('keydown',function(e){if((e.key==='f'||e.key==='F')&&!e.target.isContentEditable&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA')goFS();});
 window.addEventListener('message',function(e){
   if(!e.data)return;
   if(e.data.type==='frame'){var c=document.getElementById('pc'),b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();}
