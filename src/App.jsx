@@ -1405,6 +1405,7 @@ export default function App() {
   const [clipStyles, setClipStyles] = useState({}); // id -> style name
   const [clipBlends, setClipBlends] = useState({}); // id -> blend mode
   const [clipNames, setClipNames] = useState({});   // id -> custom display name
+  const [perfTextSize, setPerfTextSize] = useState(80);
   const WARM = "brightness(1.06) saturate(1.35) sepia(0.22)";
   const CLIP_STYLES = {
     warm:      WARM,
@@ -2113,7 +2114,7 @@ body{background:#000;overflow:hidden;width:100vw;height:100vh}
 <div id="txt-add" onclick="addTextBox()">T+</div>
 <div id="fs" onclick="goFS()">⛶ fullscreen</div>
 <script>
-var clipNum=0,txtNum=0;
+var clipNum=0,txtNum=0,defaultTxtSize=80;
 var PERF_FONTS=[['serif','Serif'],['sans-serif','Sans'],['monospace','Mono'],["'Courier Prime','Courier New',monospace",'Courier'],["'Bebas Neue',sans-serif",'Bebas'],["'Josefin Sans',sans-serif",'Josefin'],['cursive','Cursive']];
 function addTextBox(){
   var id='txt-'+(++txtNum);
@@ -2124,7 +2125,7 @@ function addTextBox(){
   var fontSel=document.createElement('select');fontSel.className='txt-sel';
   PERF_FONTS.forEach(function(f){var o=document.createElement('option');o.value=f[0];o.textContent=f[1];fontSel.appendChild(o);});
   // font size
-  var sizeInp=document.createElement('input');sizeInp.type='number';sizeInp.value='80';sizeInp.min='8';sizeInp.max='400';sizeInp.className='txt-sel';sizeInp.style.width='46px';
+  var sizeInp=document.createElement('input');sizeInp.type='number';sizeInp.value=defaultTxtSize;sizeInp.min='8';sizeInp.max='400';sizeInp.className='txt-sel';sizeInp.style.width='46px';
   // bold
   var boldBtn=document.createElement('button');boldBtn.className='txt-btn2';boldBtn.textContent='B';boldBtn.style.fontWeight='bold';var isBold=false;
   // color
@@ -2143,7 +2144,7 @@ function addTextBox(){
   div.appendChild(bar);
   // content
   var content=document.createElement('div');content.className='txt-content';content.contentEditable='true';content.spellcheck=false;
-  content.style.cssText='font-family:serif;font-size:80px;color:#fff;line-height:1.15;';
+  content.style.cssText='font-family:serif;font-size:'+defaultTxtSize+'px;color:#fff;line-height:1.15;';
   content.textContent='Text';
   div.appendChild(content);
   // resize handle
@@ -2189,6 +2190,7 @@ window.addEventListener('message',function(e){
   else if(e.data.type==='setInvert'){var c=document.getElementById('pc');if(c)c.style.filter=e.data.invert?'invert(1)':'none';}
   else if(e.data.type==='startRecord'){startPerfRecord(e.data.mimeType);}
   else if(e.data.type==='stopRecord'){stopPerfRecord();}
+  else if(e.data.type==='setTextSize'){defaultTxtSize=e.data.size;}
 });
 var _recAnim,_recMR,_recChunks=[],_recCanvas;
 function startPerfRecord(mimeType){
@@ -3040,6 +3042,18 @@ function addClip(id,dataUrl,mediaType,filter,mix,label){
           {/* Perform clips */}
           <div style={panel}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, letterSpacing: 1, color: "#cc99ff" }}>perform clips</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+              <span style={{ fontSize: 11, color: "#cc99ff" }}>text size</span>
+              <input type="number" min={8} max={400} value={perfTextSize}
+                onChange={e => {
+                  const v = Math.max(8, Math.min(400, Number(e.target.value)));
+                  setPerfTextSize(v);
+                  if (performWinRef.current && !performWinRef.current.closed)
+                    performWinRef.current.postMessage({ type: "setTextSize", size: v }, "*");
+                }}
+                style={{ width: 54, background: "#1a0033", color: "#cc99ff", border: "1px solid rgba(153,51,255,0.4)", borderRadius: 3, fontSize: 11, padding: "2px 4px" }} />
+              <span style={{ fontSize: 10, color: "rgba(153,51,255,0.5)" }}>px default</span>
+            </div>
             <label style={{ ...label12, display: "block", marginBottom: 8 }}>
               <span style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", cursor: "pointer", display: "inline-block" }}>+ add image / video</span>
               <input type="file" accept="image/*,video/*,.mp4,.webm,.mov,.avi,.mkv,.m4v,.ogv" style={{ display: "none" }}
