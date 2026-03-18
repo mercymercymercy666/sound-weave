@@ -2200,11 +2200,13 @@ function startPerfRecord(mimeType){
   var ctx=_recCanvas.getContext('2d');
   var isInv=pc.style.filter==='invert(1)';
   function frame(){
-    var W2=window.innerWidth,H2=window.innerHeight;
-    if(_recCanvas.width!==W2)_recCanvas.width=W2;
-    if(_recCanvas.height!==H2)_recCanvas.height=H2;
-    ctx.clearRect(0,0,W2,H2);
-    if(pc.width&&pc.height)ctx.drawImage(pc,0,0,W2,H2);
+    ctx.clearRect(0,0,W,H);
+    if(pc.width&&pc.height){
+      var scale=Math.min(W/pc.width,H/pc.height);
+      var dw=pc.width*scale,dh=pc.height*scale;
+      var dx=(W-dw)/2,dy=(H-dh)/2;
+      ctx.drawImage(pc,dx,dy,dw,dh);
+    }
     document.querySelectorAll('#clips .clip').forEach(function(div){
       var inn=div.querySelector('img,video');if(!inn)return;
       var l=parseInt(div.style.left)||0,t=parseInt(div.style.top)||0,w=div.offsetWidth,h=div.offsetHeight;
