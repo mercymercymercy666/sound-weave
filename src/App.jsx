@@ -1406,6 +1406,7 @@ export default function App() {
   const [clipBlends, setClipBlends] = useState({}); // id -> blend mode
   const [clipNames, setClipNames] = useState({});   // id -> custom display name
   const [perfTextSize, setPerfTextSize] = useState(80);
+  const [perfClipSize, setPerfClipSize] = useState(280);
   const WARM = "brightness(1.06) saturate(1.35) sepia(0.22)";
   const CLIP_STYLES = {
     warm:      WARM,
@@ -2183,7 +2184,7 @@ document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F')goFS
 window.addEventListener('message',function(e){
   if(!e.data)return;
   if(e.data.type==='frame'){var c=document.getElementById('pc'),b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();}
-  else if(e.data.type==='addClip'){var dataUrl=e.data.dataUrl;if(e.data.buffer){var blob=new Blob([e.data.buffer],{type:e.data.mimeType||'video/mp4'});dataUrl=URL.createObjectURL(blob);}addClip(e.data.id,dataUrl,e.data.mediaType,e.data.filter||'',e.data.mix||'normal',e.data.label||'');}
+  else if(e.data.type==='addClip'){var dataUrl=e.data.dataUrl;if(e.data.buffer){var blob=new Blob([e.data.buffer],{type:e.data.mimeType||'video/mp4'});dataUrl=URL.createObjectURL(blob);}addClip(e.data.id,dataUrl,e.data.mediaType,e.data.filter||'',e.data.mix||'normal',e.data.label||'',e.data.size||280);}
   else if(e.data.type==='removeClip'){var el=document.getElementById('clip-'+e.data.id);if(el)el.remove();}
   else if(e.data.type==='updateClip'){var el=document.getElementById('clip-'+e.data.id);if(el){var inn=el.querySelector('img,video');if(inn&&e.data.filter!=null)inn.style.filter=e.data.filter;if(e.data.mix!=null)el.style.mixBlendMode=e.data.mix;}}
   else if(e.data.type==='setBg'){document.body.style.background=e.data.color;}
@@ -2265,10 +2266,11 @@ function makeDraggable(div,resize){
   window.addEventListener('mousemove',function(e){if(resizing){var dw=e.clientX-rsx;div.style.width=Math.max(40,rsw+dw)+'px';div.style.height=Math.max(40,rsh+dw*(rsh/rsw))+'px';}});
   window.addEventListener('mouseup',function(){resizing=false;});
 }
-function addClip(id,dataUrl,mediaType,filter,mix,label){
+function addClip(id,dataUrl,mediaType,filter,mix,label,size){
   var clips=document.getElementById('clips');
   var div=document.createElement('div');div.id='clip-'+id;div.className='clip';
-  div.style.cssText='left:80px;top:80px;width:280px;height:280px;';
+  var cs=size||280;
+  div.style.cssText='left:80px;top:80px;width:'+cs+'px;height:'+cs+'px;';
   if(mix&&mix!=='normal')div.style.mixBlendMode=mix;
   var bar=document.createElement('div');bar.className='clip-bar';
   var name=document.createElement('span');name.className='clip-name';name.textContent=label||('clip '+( ++clipNum ));bar.appendChild(name);
@@ -2323,10 +2325,10 @@ function addClip(id,dataUrl,mediaType,filter,mix,label){
     if (clip.type === "video") {
       fetch(clip.blobUrl).then(r => r.arrayBuffer()).then(buf => {
         if (!performWinRef.current || performWinRef.current.closed) return;
-        performWinRef.current.postMessage({ type: "addClip", id: pid, buffer: buf, mimeType: clip.mimeType, mediaType: "video", label, filter, mix }, "*", [buf]);
+        performWinRef.current.postMessage({ type: "addClip", id: pid, buffer: buf, mimeType: clip.mimeType, mediaType: "video", label, filter, mix, size: perfClipSize }, "*", [buf]);
       });
     } else {
-      performWinRef.current.postMessage({ type: "addClip", id: pid, dataUrl: clip.blobUrl, mediaType: clip.type, label, filter, mix }, "*");
+      performWinRef.current.postMessage({ type: "addClip", id: pid, dataUrl: clip.blobUrl, mediaType: clip.type, label, filter, mix, size: perfClipSize }, "*");
     }
   }
 
@@ -3051,6 +3053,13 @@ function addClip(id,dataUrl,mediaType,filter,mix,label){
                   if (performWinRef.current && !performWinRef.current.closed)
                     performWinRef.current.postMessage({ type: "setTextSize", size: v }, "*");
                 }}
+                style={{ width: 54, background: "#1a0033", color: "#cc99ff", border: "1px solid rgba(153,51,255,0.4)", borderRadius: 3, fontSize: 11, padding: "2px 4px" }} />
+              <span style={{ fontSize: 10, color: "rgba(153,51,255,0.5)" }}>px default</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+              <span style={{ fontSize: 11, color: "#cc99ff" }}>clip size</span>
+              <input type="number" min={40} max={1920} value={perfClipSize}
+                onChange={e => setPerfClipSize(Math.max(40, Math.min(1920, Number(e.target.value))))}
                 style={{ width: 54, background: "#1a0033", color: "#cc99ff", border: "1px solid rgba(153,51,255,0.4)", borderRadius: 3, fontSize: 11, padding: "2px 4px" }} />
               <span style={{ fontSize: 10, color: "rgba(153,51,255,0.5)" }}>px default</span>
             </div>
