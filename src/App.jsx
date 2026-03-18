@@ -1972,6 +1972,17 @@ export default function App() {
     ctx.globalCompositeOperation = "source-over";
   }
 
+  window._performDownload = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   window.getPerformAudioStreams = () => {
     const streams = [];
     if (modes.A === "mic" && audioA.streamRef?.current) streams.push(audioA.streamRef.current);
@@ -2191,10 +2202,9 @@ function saveFrame(){
   ctx.drawImage(pc,0,0);
   if(isInv){ctx.save();ctx.globalCompositeOperation='difference';ctx.fillStyle='white';ctx.fillRect(0,0,pc.width,pc.height);ctx.restore();}
   c.toBlob(function(blob){
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');a.href=url;a.download='perform_'+Date.now()+'.png';
-    document.body.appendChild(a);a.click();document.body.removeChild(a);
-    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+    var fn='perform_'+Date.now()+'.png';
+    if(window.opener&&window.opener._performDownload){window.opener._performDownload(blob,fn);}
+    else{var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1000);}
   });
 }
 function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();['fs','txt-add','save-frame'].forEach(function(id){var o=document.getElementById(id);if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}});}
@@ -2270,7 +2280,7 @@ function startPerfRecord(mimeType){
   var mt=mimeType||'video/webm';
   _recMR=new MediaRecorder(combined,{mimeType:mt});
   _recMR.ondataavailable=function(e){if(e.data.size>0)_recChunks.push(e.data);};
-  _recMR.onstop=function(){cancelAnimationFrame(_recAnim);var blob=new Blob(_recChunks,{type:mt});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='perform_'+Date.now()+'.'+(mt.startsWith('video/mp4')?'mp4':'webm');document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1000);};
+  _recMR.onstop=function(){cancelAnimationFrame(_recAnim);var blob=new Blob(_recChunks,{type:mt});var fn='perform_'+Date.now()+'.'+(mt.startsWith('video/mp4')?'mp4':'webm');if(window.opener&&window.opener._performDownload){window.opener._performDownload(blob,fn);}else{var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1000);}};
   _recMR.start();
 }
 function stopPerfRecord(){if(_recMR&&_recMR.state!=='inactive')_recMR.stop();else cancelAnimationFrame(_recAnim);}
