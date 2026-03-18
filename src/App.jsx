@@ -2230,7 +2230,7 @@ function startPerfRecord(mimeType){
       ctx.font=(parseInt(bold)>=700?'bold ':'')+sz+'px '+fontFamily;
       ctx.fillStyle=color;
       if(shadow&&shadow!=='none'){ctx.shadowColor=color;ctx.shadowBlur=sz*0.8;}
-      var lines=(content.innerText||'').split('\n');
+      var lines=(content.innerText||'').split('\\n');
       lines.forEach(function(line,i){ctx.fillText(line,l+6,t+sz*(i+1)+2);});
       ctx.restore();
     });
