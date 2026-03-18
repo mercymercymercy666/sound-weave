@@ -1399,13 +1399,12 @@ export default function App() {
   const editInvertRef = useRef(false);
 
   const [isRecording, setIsRecording] = useState(false);
-  const mediaRecorderRef = useRef(null);
-  const recordedChunksRef = useRef([]);
   const [performOpen, setPerformOpen] = useState(false);
   const performWinRef = useRef(null);
   const [clips, setClips] = useState([]);
   const [clipStyles, setClipStyles] = useState({}); // id -> style name
   const [clipBlends, setClipBlends] = useState({}); // id -> blend mode
+  const [clipNames, setClipNames] = useState({});   // id -> custom display name
   const WARM = "brightness(1.06) saturate(1.35) sepia(0.22)";
   const CLIP_STYLES = {
     warm:      WARM,
@@ -1971,53 +1970,27 @@ export default function App() {
     ctx.globalCompositeOperation = "source-over";
   }
 
-  function startRecording() {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    recordedChunksRef.current = [];
-
-    const canvasStream = canvas.captureStream(30);
-    const combined = new MediaStream(canvasStream.getVideoTracks());
-
-    // Mix all active audio sources into one stream via AudioContext
-    const rawStreams = [];
-    if (modes.A === "mic" && audioA.streamRef.current)
-      rawStreams.push(audioA.streamRef.current);
-    [[audioRefB, "B"], [audioRefC, "C"], [audioRefD, "D"], [audioRefF, "F"], [audioRefG, "G"], [audioRefH, "H"]].forEach(([ref, id]) => {
-      if (modes[id] === "file" && ref.current?.captureStream) {
-        try { rawStreams.push(ref.current.captureStream()); } catch {}
-      }
+  window.getPerformAudioStreams = () => {
+    const streams = [];
+    if (modes.A === "mic" && audioA.streamRef?.current) streams.push(audioA.streamRef.current);
+    [[audioRefB,"B"],[audioRefC,"C"],[audioRefD,"D"],[audioRefF,"F"],[audioRefG,"G"],[audioRefH,"H"]].forEach(([ref,id]) => {
+      if (modes[id] === "file" && ref.current?.captureStream) { try { streams.push(ref.current.captureStream()); } catch {} }
     });
-    if (rawStreams.length > 0) {
-      try {
-        const mixCtx = new AudioContext();
-        const dest = mixCtx.createMediaStreamDestination();
-        rawStreams.forEach((s) => mixCtx.createMediaStreamSource(s).connect(dest));
-        dest.stream.getAudioTracks().forEach((t) => combined.addTrack(t));
-      } catch (e) { console.warn("Audio mix failed:", e); }
-    }
+    return streams;
+  };
 
-    const mimeType = MediaRecorder.isTypeSupported("video/mp4")
-      ? "video/mp4"
-      : MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-        ? "video/webm;codecs=vp9,opus" : "video/webm";
-    const mr = new MediaRecorder(combined, { mimeType });
-    mr.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
-    mr.onstop = () => {
-      const isMP4 = mimeType.startsWith("video/mp4");
-      const blob = new Blob(recordedChunksRef.current, { type: mimeType });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `weave_${cols}x${rows}.${isMP4 ? "mp4" : "webm"}`;
-      a.click();
-    };
-    mr.start();
-    mediaRecorderRef.current = mr;
+  function startRecording() {
+    const pw = performWinRef.current;
+    if (!pw || pw.closed) return;
+    const mimeType = MediaRecorder.isTypeSupported("video/mp4") ? "video/mp4"
+      : MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm";
+    pw.postMessage({ type: "startRecord", mimeType }, "*");
     setIsRecording(true);
   }
 
   function stopRecording() {
-    mediaRecorderRef.current?.stop();
+    const pw = performWinRef.current;
+    if (pw && !pw.closed) pw.postMessage({ type: "stopRecord" }, "*");
     setIsRecording(false);
   }
 
@@ -2136,12 +2109,54 @@ document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F')goFS
 window.addEventListener('message',function(e){
   if(!e.data)return;
   if(e.data.type==='frame'){var c=document.getElementById('pc'),b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();}
-  else if(e.data.type==='addClip')addClip(e.data.id,e.data.dataUrl,e.data.mediaType,e.data.filter||'',e.data.mix||'normal');
+  else if(e.data.type==='addClip'){var dataUrl=e.data.dataUrl;if(e.data.buffer){var blob=new Blob([e.data.buffer],{type:e.data.mimeType||'video/mp4'});dataUrl=URL.createObjectURL(blob);}addClip(e.data.id,dataUrl,e.data.mediaType,e.data.filter||'',e.data.mix||'normal',e.data.label||'');}
   else if(e.data.type==='removeClip'){var el=document.getElementById('clip-'+e.data.id);if(el)el.remove();}
   else if(e.data.type==='updateClip'){var el=document.getElementById('clip-'+e.data.id);if(el){var inn=el.querySelector('img,video');if(inn&&e.data.filter!=null)inn.style.filter=e.data.filter;if(e.data.mix!=null)el.style.mixBlendMode=e.data.mix;}}
   else if(e.data.type==='setBg'){document.body.style.background=e.data.color;}
   else if(e.data.type==='setInvert'){var c=document.getElementById('pc');if(c)c.style.filter=e.data.invert?'invert(1)':'none';}
+  else if(e.data.type==='startRecord'){startPerfRecord(e.data.mimeType);}
+  else if(e.data.type==='stopRecord'){stopPerfRecord();}
 });
+var _recAnim,_recMR,_recChunks=[],_recCanvas;
+function startPerfRecord(mimeType){
+  _recChunks=[];
+  var pc=document.getElementById('pc');
+  var W=window.innerWidth,H=window.innerHeight;
+  _recCanvas=document.createElement('canvas');
+  _recCanvas.width=W;_recCanvas.height=H;
+  var ctx=_recCanvas.getContext('2d');
+  var isInv=pc.style.filter==='invert(1)';
+  function frame(){
+    var W2=window.innerWidth,H2=window.innerHeight;
+    if(_recCanvas.width!==W2)_recCanvas.width=W2;
+    if(_recCanvas.height!==H2)_recCanvas.height=H2;
+    ctx.clearRect(0,0,W2,H2);
+    if(pc.width&&pc.height)ctx.drawImage(pc,0,0,W2,H2);
+    document.querySelectorAll('#clips .clip').forEach(function(div){
+      var inn=div.querySelector('img,video');if(!inn)return;
+      var l=parseInt(div.style.left)||0,t=parseInt(div.style.top)||0,w=div.offsetWidth,h=div.offsetHeight;
+      ctx.save();
+      var mix=div.style.mixBlendMode;if(mix&&mix!=='normal')ctx.globalCompositeOperation=mix;
+      try{ctx.drawImage(inn,l,t,w,h);}catch(e){}
+      ctx.restore();
+    });
+    if(isInv){ctx.save();ctx.globalCompositeOperation='difference';ctx.fillStyle='white';ctx.fillRect(0,0,W2,H2);ctx.restore();}
+    _recAnim=requestAnimationFrame(frame);
+  }
+  frame();
+  var stream=_recCanvas.captureStream(30);
+  var combined=new MediaStream(stream.getVideoTracks());
+  try{
+    var rawStreams=window.opener&&window.opener.getPerformAudioStreams?window.opener.getPerformAudioStreams():[];
+    if(rawStreams.length>0){var mixCtx=new AudioContext(),dest=mixCtx.createMediaStreamDestination();rawStreams.forEach(function(s){mixCtx.createMediaStreamSource(s).connect(dest);});dest.stream.getAudioTracks().forEach(function(t){combined.addTrack(t);});}
+  }catch(e){console.warn('perform audio mix failed',e);}
+  var mt=mimeType||'video/webm';
+  _recMR=new MediaRecorder(combined,{mimeType:mt});
+  _recMR.ondataavailable=function(e){if(e.data.size>0)_recChunks.push(e.data);};
+  _recMR.onstop=function(){cancelAnimationFrame(_recAnim);var blob=new Blob(_recChunks,{type:mt});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='perform_'+Date.now()+'.'+(mt.startsWith('video/mp4')?'mp4':'webm');a.click();};
+  _recMR.start();
+}
+function stopPerfRecord(){if(_recMR&&_recMR.state!=='inactive')_recMR.stop();else cancelAnimationFrame(_recAnim);}
 function makeDraggable(div,resize){
   var dragging=false,rx=0,ry=0,rl=0,rt=0;
   div.addEventListener('mousedown',function(e){if(e.target===resize||e.target.classList.contains('clip-btn'))return;dragging=true;rx=e.clientX;ry=e.clientY;rl=parseInt(div.style.left)||0;rt=parseInt(div.style.top)||0;div.style.zIndex=Date.now()%9000+1000;e.preventDefault();});
@@ -2152,13 +2167,13 @@ function makeDraggable(div,resize){
   window.addEventListener('mousemove',function(e){if(resizing){var dw=e.clientX-rsx;div.style.width=Math.max(40,rsw+dw)+'px';div.style.height=Math.max(40,rsh+dw*(rsh/rsw))+'px';}});
   window.addEventListener('mouseup',function(){resizing=false;});
 }
-function addClip(id,dataUrl,mediaType,filter,mix){
+function addClip(id,dataUrl,mediaType,filter,mix,label){
   var clips=document.getElementById('clips');
   var div=document.createElement('div');div.id='clip-'+id;div.className='clip';
   div.style.cssText='left:80px;top:80px;width:280px;height:280px;';
   if(mix&&mix!=='normal')div.style.mixBlendMode=mix;
   var bar=document.createElement('div');bar.className='clip-bar';
-  var name=document.createElement('span');name.className='clip-name';name.textContent='clip '+( ++clipNum );bar.appendChild(name);
+  var name=document.createElement('span');name.className='clip-name';name.textContent=label||('clip '+( ++clipNum ));bar.appendChild(name);
   var closeBtn=document.createElement('button');closeBtn.className='clip-btn';closeBtn.textContent='×';closeBtn.onclick=function(){div.remove();};bar.appendChild(closeBtn);
   div.appendChild(bar);
   var inner;
@@ -2187,9 +2202,10 @@ function addClip(id,dataUrl,mediaType,filter,mix){
 
   function addClip(file) {
     const url = URL.createObjectURL(file);
-    const type = file.type.startsWith("video") ? "video" : "image";
+    const isVideo = file.type.startsWith("video") || /\.(mp4|webm|mov|avi|mkv|m4v|ogv|ogg|flv|wmv)$/i.test(file.name);
+    const type = isVideo ? "video" : "image";
     const id = clipNextIdRef.current++;
-    const clip = { id, name: file.name, blobUrl: url, type };
+    const clip = { id, name: file.name, blobUrl: url, type, mimeType: file.type || (isVideo ? "video/mp4" : "image/png") };
     setClips(prev => [...prev, clip]);
   }
 
@@ -2203,9 +2219,17 @@ function addClip(id,dataUrl,mediaType,filter,mix){
     if (!performWinRef.current || performWinRef.current.closed) return;
     const filter = CLIP_STYLES[clipStyles[clip.id] ?? "warm"] ?? WARM;
     const mix = clipBlends[clip.id] ?? "normal";
+    const label = clipNames[clip.id] ?? clip.name;
     const pid = clip.id + "_" + Date.now();
     clipPerformIds.current[clip.id] = pid;
-    performWinRef.current.postMessage({ type: "addClip", id: pid, dataUrl: clip.blobUrl, mediaType: clip.type, filter, mix }, "*");
+    if (clip.type === "video") {
+      fetch(clip.blobUrl).then(r => r.arrayBuffer()).then(buf => {
+        if (!performWinRef.current || performWinRef.current.closed) return;
+        performWinRef.current.postMessage({ type: "addClip", id: pid, buffer: buf, mimeType: clip.mimeType, mediaType: "video", label, filter, mix }, "*", [buf]);
+      });
+    } else {
+      performWinRef.current.postMessage({ type: "addClip", id: pid, dataUrl: clip.blobUrl, mediaType: clip.type, label, filter, mix }, "*");
+    }
   }
 
   const energyAll = useMemo(() => {
@@ -2922,7 +2946,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, letterSpacing: 1, color: "#cc99ff" }}>perform clips</div>
             <label style={{ ...label12, display: "block", marginBottom: 8 }}>
               <span style={{ ...btn(false), borderColor: "#9933ff", color: "#cc99ff", cursor: "pointer", display: "inline-block" }}>+ add image / video</span>
-              <input type="file" accept="image/*,video/*" style={{ display: "none" }}
+              <input type="file" accept="image/*,video/*,.mp4,.webm,.mov,.avi,.mkv,.m4v,.ogv" style={{ display: "none" }}
                 onChange={e => { if (e.target.files[0]) { addClip(e.target.files[0]); e.target.value = ""; } }} />
             </label>
             {clips.length === 0 && <div style={{ fontSize: 11, color: "rgba(200,169,110,0.4)", fontStyle: "italic" }}>upload images or videos</div>}
@@ -2932,7 +2956,12 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                   ? <img src={c.blobUrl} style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)", flexShrink: 0 }} />
                   : <div style={{ width: 28, height: 28, background: "#1a0033", borderRadius: 3, border: "1px solid rgba(153,51,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>▶</div>
                 }
-                <span style={{ flex: 1, fontSize: 10, color: "#cc99ff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{c.name}</span>
+                <input
+                  value={clipNames[c.id] ?? c.name}
+                  onChange={e => setClipNames(prev => ({ ...prev, [c.id]: e.target.value }))}
+                  style={{ flex: 1, fontSize: 10, color: "#cc99ff", background: "transparent", border: "none", borderBottom: "1px solid rgba(153,51,255,0.3)", outline: "none", minWidth: 0, padding: "1px 2px" }}
+                  title="clip name in perform window"
+                />
                 <select
                   value={clipStyles[c.id] ?? "warm"}
                   onChange={e => {
@@ -3139,7 +3168,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                     // Text resize — mutate ref, commit on mouseUp
                     if (posterResizeRef.current) {
                       const { id, origFontSize, startGY } = posterResizeRef.current;
-                      const newSize = Math.max(4, Math.round(origFontSize + (gy - startGY)));
+                      const newSize = Math.max(3, Math.round(origFontSize + (gy - startGY)));
                       posterParamRef.current.texts = (posterParamRef.current.texts || []).map(t => t.id === id ? { ...t, fontSize: newSize } : t);
                       posterParamRef.current.dirty = true; return;
                     }
@@ -3253,7 +3282,7 @@ function addClip(id,dataUrl,mediaType,filter,mix){
                     style={{ width: "100%", height: 60, background: "#0e0b08", color: "#c8a96e", border: "1px solid #3a2e20", borderRadius: 6, padding: 6, fontSize: 12, boxSizing: "border-box", resize: "vertical" }} />
                   <label style={{ fontSize: 11, color: "#a07040", display: "block" }}>
                     font size — {posterSelected.fontSize}px
-                    <input type="range" min={4} max={120} value={posterSelected.fontSize}
+                    <input type="range" min={3} max={120} value={posterSelected.fontSize}
                       onPointerDown={pushPosterHistory}
                       onChange={(e) => updatePosterSelected({ fontSize: Number(e.target.value) })}
                       style={{ marginTop: 3, display: "block", width: "100%" }} />
