@@ -2107,12 +2107,15 @@ body{background:#000;overflow:hidden;width:100vw;height:100vh}
 .txt-resize{position:absolute;bottom:0;right:0;width:12px;height:12px;cursor:se-resize;background:linear-gradient(135deg,transparent 50%,rgba(255,200,80,0.7) 50%)}
 #txt-add{position:fixed;bottom:44px;right:8px;background:rgba(0,0,0,0.55);color:rgba(255,255,255,0.55);font:bold 12px/1 monospace;cursor:pointer;z-index:999;padding:5px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);transition:opacity 0.4s;letter-spacing:1px}
 #txt-add:hover{color:#fff;background:rgba(30,0,60,0.85)}
+#save-frame{position:fixed;bottom:80px;right:8px;background:rgba(0,0,0,0.55);color:rgba(255,255,255,0.55);font:10px/1 monospace;letter-spacing:1px;cursor:pointer;z-index:999;padding:4px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);transition:opacity 0.4s}
+#save-frame:hover{color:#fff;background:rgba(30,0,60,0.85)}
 #fs{position:fixed;bottom:8px;right:8px;background:rgba(0,0,0,0.55);color:rgba(255,255,255,0.4);font:10px/1 monospace;letter-spacing:1px;cursor:pointer;z-index:999;padding:4px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);transition:opacity 0.4s}
 #fs:hover{color:#fff;background:rgba(30,0,60,0.8)}
 </style></head><body>
 <canvas id="pc"></canvas>
 <div id="clips"></div>
 <div id="txt-add" onclick="addTextBox()">T+</div>
+<div id="save-frame" onclick="saveFrame()">⊡ frame</div>
 <div id="fs" onclick="goFS()">⛶ fullscreen</div>
 <script>
 var clipNum=0,txtNum=0,defaultTxtSize=80;
@@ -2179,7 +2182,19 @@ function makeTextDraggable(div,handle,rsz){
   window.addEventListener('mousemove',function(e){if(resizing){div.style.width=Math.max(60,rsw+(e.clientX-rsx))+'px';}});
   window.addEventListener('mouseup',function(){resizing=false;});
 }
-function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();['fs','txt-add'].forEach(function(id){var o=document.getElementById(id);if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}});}
+function saveFrame(){
+  var pc=document.getElementById('pc');
+  var W=window.innerWidth,H=window.innerHeight;
+  var c=document.createElement('canvas');c.width=W;c.height=H;
+  var ctx=c.getContext('2d');
+  var isInv=pc.style.filter==='invert(1)';
+  if(pc.width&&pc.height){var scale=Math.min(W/pc.width,H/pc.height);var dw=pc.width*scale,dh=pc.height*scale;var dx=(W-dw)/2,dy=(H-dh)/2;ctx.drawImage(pc,dx,dy,dw,dh);}
+  document.querySelectorAll('#clips .clip').forEach(function(div){var inn=div.querySelector('img,video');if(!inn)return;var l=parseInt(div.style.left)||0,t=parseInt(div.style.top)||0,w=div.offsetWidth,h=div.offsetHeight;ctx.save();var mix=div.style.mixBlendMode;if(mix&&mix!=='normal')ctx.globalCompositeOperation=mix;try{ctx.drawImage(inn,l,t,w,h);}catch(e){}ctx.restore();});
+  document.querySelectorAll('#clips .txt-box').forEach(function(div){var content=div.querySelector('.txt-content');if(!content)return;var l=parseInt(div.style.left)||0,t=parseInt(div.style.top)||0;var cs=window.getComputedStyle(content);var sz=parseFloat(cs.fontSize)||48;var color=cs.color||'#fff';var fontFamily=cs.fontFamily||'serif';var bold=cs.fontWeight;var shadow=cs.textShadow;var opacity=parseFloat(div.style.opacity)||1;var blend=div.style.mixBlendMode||'normal';ctx.save();ctx.globalAlpha=opacity;if(blend&&blend!=='normal')ctx.globalCompositeOperation=blend;ctx.font=(parseInt(bold)>=700?'bold ':'')+sz+'px '+fontFamily;ctx.fillStyle=color;if(shadow&&shadow!=='none'){ctx.shadowColor=color;ctx.shadowBlur=sz*0.8;}var lines=(content.innerText||'').split('\\n');lines.forEach(function(line,i){ctx.fillText(line,l+6,t+sz*(i+1)+2);});ctx.restore();});
+  if(isInv){ctx.save();ctx.globalCompositeOperation='difference';ctx.fillStyle='white';ctx.fillRect(0,0,W,H);ctx.restore();}
+  var a=document.createElement('a');a.href=c.toDataURL('image/png');a.download='perform_'+Date.now()+'.png';a.click();
+}
+function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();['fs','txt-add','save-frame'].forEach(function(id){var o=document.getElementById(id);if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}});}
 document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F')goFS();});
 window.addEventListener('message',function(e){
   if(!e.data)return;
