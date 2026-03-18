@@ -2096,15 +2096,88 @@ body{background:#000;overflow:hidden;width:100vw;height:100vh}
 .clip-btn{background:none;border:none;color:#fff;cursor:pointer;padding:1px 4px;font-size:12px;line-height:1;border-radius:3px}
 .clip-btn:hover{background:rgba(255,255,255,0.2)}
 .clip-resize{position:absolute;bottom:0;right:0;width:14px;height:14px;cursor:se-resize;background:linear-gradient(135deg,transparent 50%,rgba(255,153,51,0.8) 50%)}
+.txt-box{position:absolute;pointer-events:all;user-select:none;min-width:60px}
+.txt-bar{display:flex;align-items:center;gap:2px;padding:2px 4px;background:rgba(0,0,0,0.72);cursor:move;flex-wrap:wrap;border-radius:3px 3px 0 0}
+.txt-content{outline:none;padding:4px 6px;white-space:pre-wrap;word-break:break-word;cursor:text;min-width:60px;min-height:1em}
+.txt-sel{background:rgba(20,0,40,0.85);color:#ccc;border:1px solid rgba(255,255,255,0.18);font-size:9px;padding:1px 2px;border-radius:2px;cursor:pointer;max-width:70px}
+.txt-btn2{background:none;border:none;color:#ccc;cursor:pointer;padding:1px 5px;font-size:11px;line-height:1;border-radius:3px}
+.txt-btn2:hover{background:rgba(255,255,255,0.18)}
+.txt-resize{position:absolute;bottom:0;right:0;width:12px;height:12px;cursor:se-resize;background:linear-gradient(135deg,transparent 50%,rgba(255,200,80,0.7) 50%)}
+#txt-add{position:fixed;bottom:44px;right:8px;background:rgba(0,0,0,0.55);color:rgba(255,255,255,0.55);font:bold 12px/1 monospace;cursor:pointer;z-index:999;padding:5px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.14);transition:opacity 0.4s;letter-spacing:1px}
+#txt-add:hover{color:#fff;background:rgba(30,0,60,0.85)}
 #fs{position:fixed;bottom:8px;right:8px;background:rgba(0,0,0,0.55);color:rgba(255,255,255,0.4);font:10px/1 monospace;letter-spacing:1px;cursor:pointer;z-index:999;padding:4px 7px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);transition:opacity 0.4s}
 #fs:hover{color:#fff;background:rgba(30,0,60,0.8)}
 </style></head><body>
 <canvas id="pc"></canvas>
 <div id="clips"></div>
+<div id="txt-add" onclick="addTextBox()">T+</div>
 <div id="fs" onclick="goFS()">⛶ fullscreen</div>
 <script>
-var clipNum=0;
-function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();var o=document.getElementById('fs');if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}}
+var clipNum=0,txtNum=0;
+var PERF_FONTS=[['serif','Serif'],['sans-serif','Sans'],['monospace','Mono'],["'Courier Prime','Courier New',monospace",'Courier'],["'Bebas Neue',sans-serif",'Bebas'],["'Josefin Sans',sans-serif",'Josefin'],['cursive','Cursive']];
+function addTextBox(){
+  var id='txt-'+(++txtNum);
+  var div=document.createElement('div');div.id=id;div.className='txt-box';
+  div.style.cssText='left:120px;top:120px;z-index:'+(Date.now()%9000+1000)+';';
+  var bar=document.createElement('div');bar.className='txt-bar';
+  // font family
+  var fontSel=document.createElement('select');fontSel.className='txt-sel';
+  PERF_FONTS.forEach(function(f){var o=document.createElement('option');o.value=f[0];o.textContent=f[1];fontSel.appendChild(o);});
+  // font size
+  var sizeInp=document.createElement('input');sizeInp.type='number';sizeInp.value='48';sizeInp.min='8';sizeInp.max='400';sizeInp.className='txt-sel';sizeInp.style.width='46px';
+  // bold
+  var boldBtn=document.createElement('button');boldBtn.className='txt-btn2';boldBtn.textContent='B';boldBtn.style.fontWeight='bold';var isBold=false;
+  // color
+  var colInp=document.createElement('input');colInp.type='color';colInp.value='#ffffff';colInp.style.cssText='width:22px;height:18px;padding:0;border:none;background:none;cursor:pointer;vertical-align:middle;';
+  // glow toggle
+  var glowBtn=document.createElement('button');glowBtn.className='txt-btn2';glowBtn.textContent='✦';glowBtn.title='glow';var glowOn=false;
+  // opacity
+  var opSel=document.createElement('select');opSel.className='txt-sel';
+  [['1','100%'],['0.85','85%'],['0.7','70%'],['0.5','50%'],['0.3','30%'],['0.1','10%']].forEach(function(v){var o=document.createElement('option');o.value=v[0];o.textContent=v[1];opSel.appendChild(o);});
+  // blend
+  var blendSel=document.createElement('select');blendSel.className='txt-sel';
+  ['normal','screen','overlay','multiply','difference','luminosity','soft-light'].forEach(function(m){var o=document.createElement('option');o.value=m;o.textContent=m;blendSel.appendChild(o);});
+  // close
+  var closeBtn=document.createElement('button');closeBtn.className='txt-btn2';closeBtn.textContent='×';closeBtn.style.marginLeft='2px';closeBtn.onclick=function(){div.remove();};
+  [fontSel,sizeInp,boldBtn,colInp,glowBtn,opSel,blendSel,closeBtn].forEach(function(el){bar.appendChild(el);});
+  div.appendChild(bar);
+  // content
+  var content=document.createElement('div');content.className='txt-content';content.contentEditable='true';content.spellcheck=false;
+  content.style.cssText='font-family:serif;font-size:48px;color:#fff;line-height:1.15;';
+  content.textContent='Text';
+  div.appendChild(content);
+  // resize handle
+  var rsz=document.createElement('div');rsz.className='txt-resize';div.appendChild(rsz);
+  // wire up controls
+  function applyGlow(){content.style.textShadow=glowOn?'0 0 20px '+colInp.value+',0 0 40px '+colInp.value:'none';}
+  fontSel.onchange=function(){content.style.fontFamily=this.value;};
+  sizeInp.oninput=function(){content.style.fontSize=this.value+'px';};
+  boldBtn.onclick=function(){isBold=!isBold;content.style.fontWeight=isBold?'bold':'normal';boldBtn.style.background=isBold?'rgba(255,255,255,0.22)':'';};
+  colInp.oninput=function(){content.style.color=this.value;applyGlow();};
+  glowBtn.onclick=function(){glowOn=!glowOn;applyGlow();glowBtn.style.background=glowOn?'rgba(255,210,80,0.22)':'';};
+  opSel.onchange=function(){div.style.opacity=this.value;};
+  blendSel.onchange=function(){div.style.mixBlendMode=this.value;};
+  // store props for recording
+  div.dataset.txtbox='1';
+  // draggable by bar, resize by handle
+  makeTextDraggable(div,bar,rsz);
+  document.getElementById('clips').appendChild(div);
+  setTimeout(function(){content.focus();var r=document.createRange();r.selectNodeContents(content);var s=window.getSelection();s.removeAllRanges();s.addRange(r);},0);
+}
+function makeTextDraggable(div,handle,rsz){
+  var dragging=false,rx=0,ry=0,rl=0,rt=0;
+  handle.addEventListener('mousedown',function(e){
+    if(e.target.tagName==='SELECT'||e.target.tagName==='INPUT'||e.target.tagName==='BUTTON')return;
+    dragging=true;rx=e.clientX;ry=e.clientY;rl=parseInt(div.style.left)||0;rt=parseInt(div.style.top)||0;div.style.zIndex=Date.now()%9000+1000;e.preventDefault();
+  });
+  window.addEventListener('mousemove',function(e){if(dragging){div.style.left=(rl+e.clientX-rx)+'px';div.style.top=(rt+e.clientY-ry)+'px';}});
+  window.addEventListener('mouseup',function(){dragging=false;});
+  var resizing=false,rsx=0,rsw=0;
+  rsz.addEventListener('mousedown',function(e){resizing=true;rsx=e.clientX;rsw=div.offsetWidth;e.stopPropagation();e.preventDefault();});
+  window.addEventListener('mousemove',function(e){if(resizing){div.style.width=Math.max(60,rsw+(e.clientX-rsx))+'px';}});
+  window.addEventListener('mouseup',function(){resizing=false;});
+}
+function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();['fs','txt-add'].forEach(function(id){var o=document.getElementById(id);if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}});}
 document.addEventListener('keydown',function(e){if(e.key==='f'||e.key==='F')goFS();});
 window.addEventListener('message',function(e){
   if(!e.data)return;
@@ -2138,6 +2211,27 @@ function startPerfRecord(mimeType){
       ctx.save();
       var mix=div.style.mixBlendMode;if(mix&&mix!=='normal')ctx.globalCompositeOperation=mix;
       try{ctx.drawImage(inn,l,t,w,h);}catch(e){}
+      ctx.restore();
+    });
+    document.querySelectorAll('#clips .txt-box').forEach(function(div){
+      var content=div.querySelector('.txt-content');if(!content)return;
+      var l=parseInt(div.style.left)||0,t=parseInt(div.style.top)||0;
+      var cs=window.getComputedStyle(content);
+      var sz=parseFloat(cs.fontSize)||48;
+      var color=cs.color||'#fff';
+      var fontFamily=cs.fontFamily||'serif';
+      var bold=cs.fontWeight;
+      var shadow=cs.textShadow;
+      var opacity=parseFloat(div.style.opacity)||1;
+      var blend=div.style.mixBlendMode||'normal';
+      ctx.save();
+      ctx.globalAlpha=opacity;
+      if(blend&&blend!=='normal')ctx.globalCompositeOperation=blend;
+      ctx.font=(parseInt(bold)>=700?'bold ':'')+sz+'px '+fontFamily;
+      ctx.fillStyle=color;
+      if(shadow&&shadow!=='none'){ctx.shadowColor=color;ctx.shadowBlur=sz*0.8;}
+      var lines=(content.innerText||'').split('\n');
+      lines.forEach(function(line,i){ctx.fillText(line,l+6,t+sz*(i+1)+2);});
       ctx.restore();
     });
     if(isInv){ctx.save();ctx.globalCompositeOperation='difference';ctx.fillStyle='white';ctx.fillRect(0,0,W2,H2);ctx.restore();}
