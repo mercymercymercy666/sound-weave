@@ -986,6 +986,21 @@ function useAudioLayer() {
     startTick(analyser);
   }
 
+  async function startDevice(deviceId) {
+    await stop();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    audioCtxRef.current = ctx;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
+    analyserRef.current = analyser;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
+    streamRef.current = stream;
+    const src = ctx.createMediaStreamSource(stream);
+    sourceRef.current = src;
+    src.connect(analyser);
+    startTick(analyser);
+  }
+
   async function startFileFromElement(audioEl) {
     await stop();
     if (!audioEl) return;
@@ -1336,8 +1351,10 @@ const DEFAULT_LAYER_BAND_COLORS = {
   F: { all:"#00d4d4", sub:"#003333", bass:"#006666", lmid:"#009999", mid:"#00d4d4", hi:"#44eeee", air:"#88ffff" },
   G: { all:"#ff66cc", sub:"#660033", bass:"#990066", lmid:"#cc3399", mid:"#ff66cc", hi:"#ff99dd", air:"#ffccee" },
   H: { all:"#b0e050", sub:"#334400", bass:"#667700", lmid:"#99aa00", mid:"#b0e050", hi:"#ccee77", air:"#ddeebb" },
+  I: { all:"#9966ff", sub:"#330066", bass:"#6600cc", lmid:"#8844ee", mid:"#9966ff", hi:"#bb88ff", air:"#ddbbff" },
+  J: { all:"#ffdd44", sub:"#554400", bass:"#886600", lmid:"#bbaa00", mid:"#ffdd44", hi:"#ffee88", air:"#fff5cc" },
 };
-const IDS = ["A", "B", "C", "D", "F", "G", "H"];
+const IDS = ["A", "B", "C", "D", "F", "G", "H", "I", "J"];
 
 // Poster font options — includes user-requested + stitch-friendly Google Fonts
 const POSTER_FONTS = [
@@ -1361,7 +1378,7 @@ const POSTER_FONTS = [
 
 export default function App() {
   const [layerColors, setLayerColors] = useState(DEFAULT_LAYER_BAND_COLORS);
-  const [layerBand, setLayerBand] = useState({ A:"all", B:"all", C:"all", D:"all", F:"all", G:"all", H:"all" });
+  const [layerBand, setLayerBand] = useState({ A:"all", B:"all", C:"all", D:"all", F:"all", G:"all", H:"all", I:"all", J:"all" });
   const layerBandRef = useRef(layerBand); layerBandRef.current = layerBand;
 
   const LAYERS = useMemo(() => [
@@ -1372,6 +1389,8 @@ export default function App() {
     { id: "F", name: "AUDIO 4", type: "file", color: layerColors.F[layerBand.F ?? "all"] },
     { id: "G", name: "AUDIO 5", type: "file", color: layerColors.G[layerBand.G ?? "all"] },
     { id: "H", name: "AUDIO 6", type: "file", color: layerColors.H[layerBand.H ?? "all"] },
+    { id: "I", name: "INTERFACE 1", type: "device", color: layerColors.I[layerBand.I ?? "all"] },
+    { id: "J", name: "INTERFACE 2", type: "device", color: layerColors.J[layerBand.J ?? "all"] },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [layerColors, layerBand]);
 
@@ -1434,10 +1453,12 @@ export default function App() {
   const [drawValue, setDrawValue] = useState(1);
   const [mouseDown, setMouseDown] = useState(false);
 
-  const [modes, setModes]           = useState({ A: "off", B: "off", C: "off", D: "off", F: "off", G: "off", H: "off" });
-  const [speeds, setSpeeds]         = useState({ A: 10,  B: 10,  C: 10,  D: 10,  F: 10,  G: 10,  H: 10 });
-  const [thresholds, setThresholds] = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55 });
-  const [alphas, setAlphas]         = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55 });
+  const [modes, setModes]           = useState({ A: "off", B: "off", C: "off", D: "off", F: "off", G: "off", H: "off", I: "off", J: "off" });
+  const [speeds, setSpeeds]         = useState({ A: 10,  B: 10,  C: 10,  D: 10,  F: 10,  G: 10,  H: 10,  I: 10,  J: 10 });
+  const [thresholds, setThresholds] = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55, I: 0.55, J: 0.55 });
+  const [alphas, setAlphas]         = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55, I: 0.55, J: 0.55 });
+  const [audioDevices, setAudioDevices] = useState([]);
+  const [deviceSel, setDeviceSel]   = useState({ I: "", J: "" });
 
   // Image guide
   const [imageGuide, setImageGuide] = useState(() => makeGrid(80, 60, 0));
@@ -1467,8 +1488,10 @@ export default function App() {
   const audioF = useAudioLayer();
   const audioG = useAudioLayer();
   const audioH = useAudioLayer();
+  const audioI = useAudioLayer();
+  const audioJ = useAudioLayer();
   const audioMap = useMemo(
-    () => ({ A: audioA, B: audioB, C: audioC, D: audioD, F: audioF, G: audioG, H: audioH }),
+    () => ({ A: audioA, B: audioB, C: audioC, D: audioD, F: audioF, G: audioG, H: audioH, I: audioI, J: audioJ }),
     [audioA, audioB, audioC, audioD, audioF, audioG, audioH]
   );
   const audioMapRef = useRef(audioMap);
@@ -1519,11 +1542,13 @@ export default function App() {
   useEffect(() => { (async () => { try { if (modes.F === "off") await audioF.stop(); if (modes.F === "file") await audioF.startFileFromElement(audioRefF.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, F: "off" })); } })(); }, [modes.F]); // eslint-disable-line
   useEffect(() => { (async () => { try { if (modes.G === "off") await audioG.stop(); if (modes.G === "file") await audioG.startFileFromElement(audioRefG.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, G: "off" })); } })(); }, [modes.G]); // eslint-disable-line
   useEffect(() => { (async () => { try { if (modes.H === "off") await audioH.stop(); if (modes.H === "file") await audioH.startFileFromElement(audioRefH.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, H: "off" })); } })(); }, [modes.H]); // eslint-disable-line
+  useEffect(() => { (async () => { try { if (modes.I === "off") await audioI.stop(); if (modes.I === "device" && deviceSel.I) await audioI.startDevice(deviceSel.I); } catch (e) { console.warn(e); setModes(m => ({ ...m, I: "off" })); } })(); }, [modes.I, deviceSel.I]); // eslint-disable-line
+  useEffect(() => { (async () => { try { if (modes.J === "off") await audioJ.stop(); if (modes.J === "device" && deviceSel.J) await audioJ.startDevice(deviceSel.J); } catch (e) { console.warn(e); setModes(m => ({ ...m, J: "off" })); } })(); }, [modes.J, deviceSel.J]); // eslint-disable-line
   // Audio → grid paint loop
   useEffect(() => {
     let raf = null;
     let last = performance.now();
-    const acc = { A: 0, B: 0, C: 0, D: 0, F: 0, G: 0, H: 0 };
+    const acc = { A: 0, B: 0, C: 0, D: 0, F: 0, G: 0, H: 0, I: 0, J: 0 };
 
     const step = (now) => {
       const dt = (now - last) / 1000;
@@ -1986,6 +2011,8 @@ export default function App() {
   window.getPerformAudioStreams = () => {
     const streams = [];
     if (modes.A === "mic" && audioA.streamRef?.current) streams.push(audioA.streamRef.current);
+    if (modes.I === "device" && audioI.streamRef?.current) streams.push(audioI.streamRef.current);
+    if (modes.J === "device" && audioJ.streamRef?.current) streams.push(audioJ.streamRef.current);
     [[audioRefB,"B"],[audioRefC,"C"],[audioRefD,"D"],[audioRefF,"F"],[audioRefG,"G"],[audioRefH,"H"]].forEach(([ref,id]) => {
       if (modes[id] === "file" && ref.current?.captureStream) { try { streams.push(ref.current.captureStream()); } catch {} }
     });
@@ -2366,7 +2393,7 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
     for (const L of LAYERS) e[L.id] = Math.round((audioMap[L.id]?.energy ?? 0) * 100);
     return e;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [LAYERS, audioMap, audioA.energy, audioB.energy, audioC.energy, audioD.energy, audioF.energy, audioG.energy, audioH.energy]);
+  }, [LAYERS, audioMap, audioA.energy, audioB.energy, audioC.energy, audioD.energy, audioF.energy, audioG.energy, audioH.energy, audioI.energy, audioJ.energy]);
 
   const audioRefs = { B: audioRefB, C: audioRefC, D: audioRefD, F: audioRefF, G: audioRefG, H: audioRefH };
 
@@ -2681,6 +2708,8 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
     const combined = new MediaStream(rc.captureStream(30).getVideoTracks());
     const rawStreams = [];
     if (modes.A === "mic" && audioA.streamRef.current) rawStreams.push(audioA.streamRef.current);
+    if (modes.I === "device" && audioI.streamRef.current) rawStreams.push(audioI.streamRef.current);
+    if (modes.J === "device" && audioJ.streamRef.current) rawStreams.push(audioJ.streamRef.current);
     [[audioRefB,"B"],[audioRefC,"C"],[audioRefD,"D"],[audioRefF,"F"],[audioRefG,"G"],[audioRefH,"H"]].forEach(([ref,id]) => {
       if (modes[id] === "file" && ref.current?.captureStream) { try { rawStreams.push(ref.current.captureStream()); } catch {} }
     });
@@ -2894,7 +2923,7 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
-                  {(L.type === "mic" ? ["off", "mic"] : ["off", "file"]).map((m) => (
+                  {(L.type === "mic" ? ["off", "mic"] : L.type === "device" ? ["off", "device"] : ["off", "file"]).map((m) => (
                     <button key={m} onClick={() => setModes((s) => ({ ...s, [L.id]: m }))} style={btn(modes[L.id] === m)}>{m}</button>
                   ))}
                 </div>
@@ -2930,6 +2959,23 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
                   <div style={{ marginBottom: 6 }}>
                     <input type="file" accept="audio/*" onChange={(e) => filePickerToAudio(audioRefs[L.id], e.target.files?.[0], L.id)} style={{ fontSize: 11 }} />
                     <audio ref={audioRefs[L.id]} controls style={{ width: "100%", marginTop: 4, height: 28 }} />
+                  </div>
+                )}
+                {L.type === "device" && (
+                  <div style={{ marginBottom: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                      <select
+                        value={deviceSel[L.id] ?? ""}
+                        onChange={e => setDeviceSel(s => ({ ...s, [L.id]: e.target.value }))}
+                        style={{ flex: 1, fontSize: 10, background: "#111", color: "#ccc", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 4, padding: "2px 4px" }}
+                      >
+                        <option value="">— select input —</option>
+                        {audioDevices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `Input ${d.deviceId.slice(0,6)}`}</option>)}
+                      </select>
+                      <button onClick={() => navigator.mediaDevices.getUserMedia({ audio: true }).then(() => navigator.mediaDevices.enumerateDevices()).then(devs => setAudioDevices(devs.filter(d => d.kind === "audioinput")))}
+                        style={{ ...btn(false), fontSize: 9, whiteSpace: "nowrap" }}>scan</button>
+                    </div>
+                    {!deviceSel[L.id] && <span style={{ fontSize: 9, color: "rgba(255,180,80,0.7)" }}>click scan then select your Focusrite input</span>}
                   </div>
                 )}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
