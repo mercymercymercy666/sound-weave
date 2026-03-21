@@ -988,6 +988,7 @@ function useAudioLayer() {
 
   async function startDevice(deviceId) {
     await stop();
+    await new Promise(r => setTimeout(r, 150)); // let browser release device
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     audioCtxRef.current = ctx;
     const analyser = ctx.createAnalyser();
@@ -2980,7 +2981,7 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
                         <option value="">— select input —</option>
                         {audioDevices.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `Input ${d.deviceId.slice(0,6)}`}</option>)}
                       </select>
-                      <button onClick={() => navigator.mediaDevices.getUserMedia({ audio: true }).then(() => navigator.mediaDevices.enumerateDevices()).then(devs => setAudioDevices(devs.filter(d => d.kind === "audioinput")))}
+                      <button onClick={() => navigator.mediaDevices.getUserMedia({ audio: true }).then(s => { s.getTracks().forEach(t => t.stop()); return navigator.mediaDevices.enumerateDevices(); }).then(devs => setAudioDevices(devs.filter(d => d.kind === "audioinput")))}
                         style={{ ...btn(false), fontSize: 9, whiteSpace: "nowrap" }}>scan</button>
                     </div>
                     {!deviceSel[L.id] && <span style={{ fontSize: 9, color: "rgba(255,180,80,0.7)" }}>click scan then select your Focusrite input</span>}
