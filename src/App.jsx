@@ -975,6 +975,7 @@ function useAudioLayer() {
     await stop();
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     audioCtxRef.current = ctx;
+    await ctx.resume();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
     analyserRef.current = analyser;
@@ -991,6 +992,7 @@ function useAudioLayer() {
     await new Promise(r => setTimeout(r, 150)); // let browser release device
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     audioCtxRef.current = ctx;
+    await ctx.resume();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
     analyserRef.current = analyser;
@@ -1047,7 +1049,7 @@ function useAudioLayer() {
     if (gainRef.current && typeof gain === "number") gainRef.current.gain.setTargetAtTime(gain, ctx.currentTime, 0.01);
   }
 
-  return { energy, binsRef, bandsRef, startMic, startFileFromElement, startOsc, updateOsc, stop, streamRef };
+  return { energy, binsRef, bandsRef, startMic, startDevice, startFileFromElement, startOsc, updateOsc, stop, streamRef };
 }
 
 function spectralCentroid01(bins) {
@@ -1468,6 +1470,7 @@ export default function App() {
   const [alphas, setAlphas]         = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55, I: 0.55, J: 0.55 });
   const [audioDevices, setAudioDevices] = useState([]);
   const [deviceSel, setDeviceSel]   = useState({ I: "", J: "" });
+  const [deviceErr, setDeviceErr]   = useState({ I: "", J: "" });
 
   // Image guide
   const [imageGuide, setImageGuide] = useState(() => makeGrid(80, 60, 0));
@@ -1551,8 +1554,8 @@ export default function App() {
   useEffect(() => { (async () => { try { if (modes.F === "off") await audioF.stop(); if (modes.F === "file") await audioF.startFileFromElement(audioRefF.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, F: "off" })); } })(); }, [modes.F]); // eslint-disable-line
   useEffect(() => { (async () => { try { if (modes.G === "off") await audioG.stop(); if (modes.G === "file") await audioG.startFileFromElement(audioRefG.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, G: "off" })); } })(); }, [modes.G]); // eslint-disable-line
   useEffect(() => { (async () => { try { if (modes.H === "off") await audioH.stop(); if (modes.H === "file") await audioH.startFileFromElement(audioRefH.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, H: "off" })); } })(); }, [modes.H]); // eslint-disable-line
-  useEffect(() => { (async () => { try { if (modes.I === "off") await audioI.stop(); if (modes.I === "device" && deviceSel.I) await audioI.startDevice(deviceSel.I); } catch (e) { console.warn(e); setModes(m => ({ ...m, I: "off" })); } })(); }, [modes.I, deviceSel.I]); // eslint-disable-line
-  useEffect(() => { (async () => { try { if (modes.J === "off") await audioJ.stop(); if (modes.J === "device" && deviceSel.J) await audioJ.startDevice(deviceSel.J); } catch (e) { console.warn(e); setModes(m => ({ ...m, J: "off" })); } })(); }, [modes.J, deviceSel.J]); // eslint-disable-line
+  useEffect(() => { (async () => { try { if (modes.I === "off") await audioI.stop(); if (modes.I === "device" && deviceSel.I) await audioI.startDevice(deviceSel.I); } catch (e) { console.warn(e); setDeviceErr(er => ({...er, I: e.name+": "+e.message})); setModes(m => ({ ...m, I: "off" })); } })(); }, [modes.I, deviceSel.I]); // eslint-disable-line
+  useEffect(() => { (async () => { try { if (modes.J === "off") await audioJ.stop(); if (modes.J === "device" && deviceSel.J) await audioJ.startDevice(deviceSel.J); } catch (e) { console.warn(e); setDeviceErr(er => ({...er, J: e.name+": "+e.message})); setModes(m => ({ ...m, J: "off" })); } })(); }, [modes.J, deviceSel.J]); // eslint-disable-line
   // Audio → grid paint loop
   useEffect(() => {
     let raf = null;
@@ -2985,6 +2988,7 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
                         style={{ ...btn(false), fontSize: 9, whiteSpace: "nowrap" }}>scan</button>
                     </div>
                     {!deviceSel[L.id] && <span style={{ fontSize: 9, color: "rgba(255,180,80,0.7)" }}>click scan then select your Focusrite input</span>}
+                    {deviceErr[L.id] && <span style={{ fontSize: 9, color: "#ff6666" }}>{deviceErr[L.id]}</span>}
                   </div>
                 )}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
