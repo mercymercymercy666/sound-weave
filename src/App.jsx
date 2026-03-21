@@ -993,7 +993,15 @@ function useAudioLayer() {
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.85;
     analyserRef.current = analyser;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId,
+        channelCount: { ideal: 2 },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      }
+    });
     streamRef.current = stream;
     const src = ctx.createMediaStreamSource(stream);
     sourceRef.current = src;
