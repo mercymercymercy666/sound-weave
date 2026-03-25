@@ -2790,7 +2790,6 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
               <div>
                 <div style={{ fontWeight: 900, fontSize: 20, letterSpacing: 2, textShadow: `0 0 12px ${NG}` }}>SOUND WEAVE</div>
-                <div style={{ ...muted, marginTop: 3 }}>upload an image, add sound — the weave draws itself</div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 {/* Pattern mode toggle */}
