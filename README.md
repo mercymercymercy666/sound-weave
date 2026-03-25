@@ -1,8 +1,8 @@
 # Sound Weave
 
-A live knitting pattern generator that weaves sound into fabric.
+A live knitting pattern generator
 
-Upload an image, feed it sound — mic or audio files — and watch a textile pattern grow, driven by audio in real time.
+for design/live/sound!
 
 **Live:** https://mercymercymercy666.github.io/sound-weave/
 
