@@ -1430,9 +1430,7 @@ export default function App() {
 
   const [isRecording, setIsRecording] = useState(false);
   const [performOpen, setPerformOpen] = useState(false);
-  const [performAspect, setPerformAspect] = useState("16/9");
   const performWinRef = useRef(null);
-  const performPreviewRef = useRef(null);
   const [clips, setClips] = useState([]);
   const [clipStyles, setClipStyles] = useState({}); // id -> style name
   const [clipBlends, setClipBlends] = useState({}); // id -> blend mode
@@ -1485,7 +1483,6 @@ export default function App() {
   // Notation + score overlays
   const [showNotation, setShowNotation] = useState(false);
   const [showScore, setShowScore] = useState(false);
-  const [showMirror, setShowMirror] = useState(false);
 
   // Brush/media overlay
   const [ovActiveTool, setOvActiveTool] = useState("grid"); // "grid"|"brush"
@@ -1768,50 +1765,11 @@ export default function App() {
 
   editInvertRef.current = editInvert; // inline — always current before RAF reads it
 
-  // Receive composite mirror frames back from perform window
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.data?.type === "mirrorCursor") {
-        const c = performPreviewRef.current;
-        if (c) c.style.cursor = e.data.cursor;
-        return;
-      }
-      if (e.data?.type !== "mirrorFrame") return;
-      const preview = performPreviewRef.current;
-      if (!preview) { e.data.bitmap.close(); return; }
-      const bmp = e.data.bitmap;
-      if (preview.width !== bmp.width || preview.height !== bmp.height) {
-        preview.width = bmp.width; preview.height = bmp.height;
-        setPerformAspect(`${bmp.width} / ${bmp.height}`);
-      }
-      preview.getContext("2d").drawImage(bmp, 0, 0);
-      bmp.close();
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, []);
-
-  // Forward keyboard input to perform window text boxes when mirror is active
-  useEffect(() => {
-    const handler = (e) => {
-      const pw = performWinRef.current;
-      if (!pw || pw.closed || !performOpen) return;
-      // Don't intercept when typing in edit-screen inputs
-      const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
-      if (e.key === 'Backspace') { e.preventDefault(); pw.postMessage({ type: 'mirrorBackspace' }, '*'); }
-      else if (e.key === 'Enter') { e.preventDefault(); pw.postMessage({ type: 'mirrorEnter' }, '*'); }
-      else if (e.key.length === 1) { pw.postMessage({ type: 'mirrorKey', key: e.key }, '*'); }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [performOpen]);
-
   // Sync perform window background with editInvert
   useEffect(() => {
     const pw = performWinRef.current;
     if (pw && !pw.closed) {
-      pw.postMessage({ type: "setBg", color: "#000000" }, "*");
+      pw.postMessage({ type: "setBg", color: editInvert ? "#ffffff" : "#000000" }, "*");
       pw.postMessage({ type: "setInvert", invert: editInvert }, "*");
     }
   }, [editInvert, performOpen]);
@@ -1936,8 +1894,6 @@ export default function App() {
     const img = new Image();
     img.onload = () => setBgImg(img);
     img.src = url;
-    const pw = performWinRef.current;
-    if (pw && !pw.closed) pw.focus();
   }
 
   function handleMaskImage(file) {
@@ -2098,37 +2054,26 @@ export default function App() {
       c.getContext("2d").drawImage(img, 0, 0);
       return c.toDataURL();
     };
-    // Read all clips as base64 then save
-    const clipEntries = clips.map(c => ({ id: c.id, name: c.name, type: c.type, mimeType: c.mimeType, blobUrl: c.blobUrl }));
-    Promise.all(clipEntries.map(c =>
-      fetch(c.blobUrl).then(r => r.arrayBuffer()).then(buf => {
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-        return { ...c, b64 };
-      })
-    )).then(clipsWithData => {
-      const session = {
-        v: 1,
-        patternMode, rows, cols, cell, symmetry, combineMode,
-        warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha,
-        borderRadius, sizeVariation, posterizeLevels,
-        editInvert, stitchInvert,
-        modes, speeds, thresholds, alphas, layerBand, layerColors,
-        grids,
-        imageMode, imgThreshold, imgInvert,
-        ovBlend, ovOpacity, ovBrushSize, ovBrushMode,
-        bgImg: toDataUrl(bgImg),
-        maskImg: toDataUrl(maskImg),
-        posterTexts, posterNextId,
-        posterCell, staveCount, notationSeed, fabricInvert,
-        posterOvType, posterOvOpacity, posterOvBlend,
-        clips: clipsWithData.map(({ blobUrl, ...rest }) => rest),
-        clipStyles, clipBlends, clipNames,
-      };
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([JSON.stringify(session)], { type: "application/json" }));
-      a.download = `soundweave-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.json`;
-      a.click();
-    });
+    const session = {
+      v: 1,
+      patternMode, rows, cols, cell, symmetry, combineMode,
+      warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha,
+      borderRadius, sizeVariation, posterizeLevels,
+      editInvert, stitchInvert,
+      modes, speeds, thresholds, alphas, layerBand, layerColors,
+      grids,
+      imageMode, imgThreshold, imgInvert,
+      ovBlend, ovOpacity, ovBrushSize, ovBrushMode,
+      bgImg: toDataUrl(bgImg),
+      maskImg: toDataUrl(maskImg),
+      posterTexts, posterNextId,
+      posterCell, staveCount, notationSeed, fabricInvert,
+      posterOvType, posterOvOpacity, posterOvBlend,
+    };
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(session)], { type: "application/json" }));
+    a.download = `soundweave-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.json`;
+    a.click();
   }
 
   function loadSession(file) {
@@ -2180,21 +2125,6 @@ export default function App() {
         if (s.posterOvType !== undefined) setPosterOvType(s.posterOvType);
         if (s.posterOvOpacity != null)    setPosterOvOpacity(s.posterOvOpacity);
         if (s.posterOvBlend)              setPosterOvBlend(s.posterOvBlend);
-        if (s.clips && s.clips.length > 0) {
-          const restored = s.clips.map(c => {
-            const bytes = Uint8Array.from(atob(c.b64), ch => ch.charCodeAt(0));
-            const blob = new Blob([bytes], { type: c.mimeType });
-            const blobUrl = URL.createObjectURL(blob);
-            return { id: c.id, name: c.name, type: c.type, mimeType: c.mimeType, blobUrl };
-          });
-          setClips(restored);
-          clipNextIdRef.current = Math.max(...restored.map(c => c.id)) + 1;
-          if (s.clipStyles) setClipStyles(s.clipStyles);
-          if (s.clipBlends) setClipBlends(s.clipBlends);
-          if (s.clipNames)  setClipNames(s.clipNames);
-        } else {
-          setClips([]);
-        }
       } catch (err) { console.error("Failed to load session", err); }
     };
     reader.readAsText(file);
@@ -2209,7 +2139,7 @@ export default function App() {
     const html = `<!doctype html><html><head><style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#000;overflow:hidden;width:100vw;height:100vh}
-#pc{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;image-rendering:pixelated;background:transparent}
+#pc{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;image-rendering:pixelated;background:#000}
 #clips{position:absolute;inset:0;pointer-events:none}
 .clip{position:absolute;pointer-events:all;cursor:move;user-select:none;min-width:40px;min-height:40px}
 .clip img,.clip video{display:block;width:100%;height:100%;object-fit:contain}
@@ -2238,8 +2168,7 @@ body{background:#000;overflow:hidden;width:100vw;height:100vh}
 <div id="save-frame" onclick="saveFrame()">⊡ frame</div>
 <div id="fs" onclick="goFS()">⛶ fullscreen</div>
 <script>
-var clipNum=0,txtNum=0,defaultTxtSize=80,_mc2=null,_invertActive=false,_mirrorTick=0;
-if(!CanvasRenderingContext2D.prototype.roundRect){CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){if(typeof r==='number')r=[r];if(!r||!r.length)r=[0];var tl=r[0],tr=r[1]!=null?r[1]:r[0],br=r[2]!=null?r[2]:r[0],bl=r[3]!=null?r[3]:r[1]!=null?r[1]:r[0];this.moveTo(x+tl,y);this.lineTo(x+w-tr,y);this.quadraticCurveTo(x+w,y,x+w,y+tr);this.lineTo(x+w,y+h-br);this.quadraticCurveTo(x+w,y+h,x+w-br,y+h);this.lineTo(x+bl,y+h);this.quadraticCurveTo(x,y+h,x,y+h-bl);this.lineTo(x,y+tl);this.quadraticCurveTo(x,y,x+tl,y);this.closePath();};}
+var clipNum=0,txtNum=0,defaultTxtSize=80;
 var PERF_FONTS=[['serif','Serif'],['sans-serif','Sans'],['monospace','Mono'],["'Courier Prime','Courier New',monospace",'Courier'],["'Bebas Neue',sans-serif",'Bebas'],["'Josefin Sans',sans-serif",'Josefin'],['cursive','Cursive']];
 function addTextBox(){
   var id='txt-'+(++txtNum);
@@ -2303,54 +2232,27 @@ function makeTextDraggable(div,handle,rsz){
   window.addEventListener('mousemove',function(e){if(resizing){div.style.width=Math.max(60,rsw+(e.clientX-rsx))+'px';}});
   window.addEventListener('mouseup',function(){resizing=false;});
 }
-function drawPerformComposite(ctx,W,H,skipInvert){
+function drawPerformComposite(ctx,W,H){
   var pc=document.getElementById('pc');
-  var isInv=_invertActive&&!skipInvert;
+  var isInv=pc.style.filter==='invert(1)';
   ctx.clearRect(0,0,W,H);
-  ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
   if(pc.width&&pc.height){
     var scale=Math.min(W/pc.width,H/pc.height);
     var dw=pc.width*scale,dh=pc.height*scale;
     var dx=(W-dw)/2,dy=(H-dh)/2;
     ctx.drawImage(pc,dx,dy,dw,dh);
-    // Invert only the pattern area — matches CSS filter:invert(1) on #pc
-    if(isInv){ctx.save();ctx.globalCompositeOperation='difference';ctx.fillStyle='white';ctx.fillRect(dx,dy,dw,dh);ctx.restore();}
   }
   document.querySelectorAll('#clips .clip').forEach(function(div){
     var inn=div.querySelector('img,video');if(!inn)return;
     var l=parseInt(div.style.left)||0,t=parseInt(div.style.top)||0,w=div.offsetWidth,h=div.offsetHeight;
-    var nw=inn.naturalWidth||inn.videoWidth||w,nh=inn.naturalHeight||inn.videoHeight||h;
-    if(!nw||!nh)return;
-    var scale=Math.min(w/nw,h/nh);
-    var dw2=nw*scale,dh2=nh*scale;
-    var dx2=l+(w-dw2)/2,dy2=t+(h-dh2)/2;
     ctx.save();
     var mix=div.style.mixBlendMode;if(mix&&mix!=='normal')ctx.globalCompositeOperation=mix;
-    if(inn.style.filter)ctx.filter=inn.style.filter;
-    try{ctx.drawImage(inn,dx2,dy2,dw2,dh2);}catch(e){}
-    ctx.filter='none';
-    ctx.restore();
-    // Clip bar (name + × button)
-    var barEl=div.querySelector('.clip-bar');
-    var barH=barEl?barEl.offsetHeight:22;
-    ctx.save();
-    ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(l,t-barH,w,barH);
-    var nameEl=div.querySelector('.clip-name');
-    ctx.fillStyle='rgba(200,200,200,0.8)';ctx.font='10px monospace';
-    ctx.textAlign='left';ctx.textBaseline='middle';
-    ctx.fillText(nameEl?nameEl.textContent:'clip',l+4,t-barH/2);
-    ctx.fillStyle='rgba(255,100,100,0.9)';ctx.textAlign='right';
-    ctx.fillText('×',l+w-4,t-barH/2);
-    ctx.restore();
-    // Orange resize handle
-    ctx.save();
-    ctx.beginPath();ctx.moveTo(l+w-14,t+h);ctx.lineTo(l+w,t+h);ctx.lineTo(l+w,t+h-14);ctx.closePath();
-    ctx.fillStyle='rgba(255,153,51,0.85)';ctx.fill();
+    try{ctx.drawImage(inn,l,t,w,h);}catch(e){}
     ctx.restore();
   });
   document.querySelectorAll('#clips .txt-box').forEach(function(div){
     var content=div.querySelector('.txt-content');if(!content)return;
-    var l=parseInt(div.style.left)||0,t=parseInt(div.style.top)||0,w=div.offsetWidth;
+    var l=parseInt(div.style.left)||0,t=parseInt(div.style.top)||0;
     var cs=window.getComputedStyle(content);
     var sz=parseFloat(cs.fontSize)||48;
     var color=cs.color||'#fff';
@@ -2359,52 +2261,6 @@ function drawPerformComposite(ctx,W,H,skipInvert){
     var shadow=cs.textShadow;
     var opacity=parseFloat(div.style.opacity)||1;
     var blend=div.style.mixBlendMode||'normal';
-    // Draw toolbar
-    var bar=div.querySelector('.txt-bar');
-    var barH=bar?bar.offsetHeight:26;
-    var tw=div.offsetWidth||220;
-    ctx.save();
-    ctx.globalAlpha=0.9;
-    ctx.fillStyle='rgba(0,0,0,0.72)';
-    ctx.fillRect(l,t,tw,barH);
-    // Draw each control pill
-    var cx=l+4;
-    var barMid=t+barH/2;
-    ctx.font='9px monospace';ctx.textBaseline='middle';
-    function pill(label,bg,fg,pw2){
-      ctx.fillStyle=bg||'rgba(20,0,40,0.85)';
-      ctx.strokeStyle='rgba(255,255,255,0.18)';ctx.lineWidth=0.5;
-      ctx.beginPath();ctx.roundRect(cx,t+3,pw2,barH-6,2);ctx.fill();ctx.stroke();
-      ctx.fillStyle=fg||'#ccc';ctx.textAlign='center';
-      ctx.fillText(label,cx+pw2/2,barMid);
-      cx+=pw2+3;
-    }
-    // Font family
-    var famLabel=cs.fontFamily.split(',')[0].replace(/['"]/g,'').trim().slice(0,6);
-    pill(famLabel,null,null,36);
-    // Font size
-    pill(Math.round(sz)+'px',null,'#ccc',30);
-    // Bold
-    var isBold2=parseInt(bold)>=700;
-    pill('B',isBold2?'rgba(255,255,255,0.22)':'',isBold2?'#fff':'#aaa',16);
-    // Color swatch
-    ctx.fillStyle=color;
-    ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=0.5;
-    ctx.beginPath();ctx.roundRect(cx,t+5,16,barH-10,2);ctx.fill();ctx.stroke();
-    cx+=19;
-    // Glow
-    var hasGlow=shadow&&shadow!=='none';
-    pill('✦',hasGlow?'rgba(255,210,80,0.22)':'',hasGlow?'#ffd050':'#888',16);
-    // Opacity
-    var opVal=Math.round(opacity*100)+'%';
-    pill(opVal,null,null,28);
-    // Blend
-    var blendShort=blend.slice(0,6);
-    pill(blendShort,null,null,36);
-    // Close
-    pill('×',null,'#f88',14);
-    ctx.restore();
-    // Draw text content
     ctx.save();
     ctx.globalAlpha=opacity;
     if(blend&&blend!=='normal')ctx.globalCompositeOperation=blend;
@@ -2412,29 +2268,10 @@ function drawPerformComposite(ctx,W,H,skipInvert){
     ctx.fillStyle=color;
     if(shadow&&shadow!=='none'){ctx.shadowColor=color;ctx.shadowBlur=sz*0.8;}
     var lines=(content.innerText||'').split('\\n');
-    lines.forEach(function(line,i){ctx.fillText(line,l+6,t+barH+sz*(i+1)+2);});
-    // Draw yellow resize handle
-    var th=div.offsetHeight||sz+barH+8;
-    ctx.fillStyle='rgba(255,200,80,0.7)';
-    ctx.beginPath();ctx.moveTo(l+tw-12,t+th);ctx.lineTo(l+tw,t+th);ctx.lineTo(l+tw,t+th-12);ctx.closePath();ctx.fill();
+    lines.forEach(function(line,i){ctx.fillText(line,l+6,t+sz*(i+1)+2);});
     ctx.restore();
   });
-  // Always draw the 3 overlay buttons at fixed bottom-right positions
-  [['T+',W-8-32,H-44-22],['⊡ frame',W-8-52,H-80-18],['⛶ fullscreen',W-8-70,H-8-18]].forEach(function(item){
-    var label=item[0],bx=item[1],by=item[2],bw=item[1]===W-8-32?32:item[1]===W-8-52?52:70,bh=18;
-    ctx.save();
-    ctx.globalAlpha=0.55;
-    ctx.fillStyle='rgba(0,0,0,0.55)';
-    ctx.strokeStyle='rgba(255,255,255,0.12)';
-    ctx.lineWidth=1;
-    ctx.beginPath();ctx.roundRect(bx,by,bw,bh,4);ctx.fill();ctx.stroke();
-    ctx.globalAlpha=0.55;
-    ctx.fillStyle='rgba(255,255,255,0.55)';
-    ctx.font='10px monospace';
-    ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(label,bx+bw/2,by+bh/2);
-    ctx.restore();
-  });
+  if(isInv){ctx.save();ctx.globalCompositeOperation='difference';ctx.fillStyle='white';ctx.fillRect(0,0,W,H);ctx.restore();}
 }
 function saveFrame(){
   var W=window.innerWidth,H=window.innerHeight;
@@ -2447,48 +2284,16 @@ function saveFrame(){
     else{var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1000);}
   });
 }
-var _fsActive=false,_escPressed=false;
-function tryReFS(){if(_fsActive&&!document.fullscreenElement)document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(function(){});}
-function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();_fsActive=true;['fs','txt-add','save-frame'].forEach(function(id){var o=document.getElementById(id);if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}});}
-document.addEventListener('keydown',function(e){
-  if(e.key==='Escape')_escPressed=true;
-  else tryReFS();
-  if((e.key==='f'||e.key==='F')&&!e.target.isContentEditable&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA')goFS();
-});
-document.addEventListener('click',tryReFS);
-window.addEventListener('focus',tryReFS);
-document.addEventListener('fullscreenchange',function(){
-  if(!document.fullscreenElement&&_fsActive&&!_escPressed){
-    var ov=document.createElement('div');ov.id='fs-tap';
-    ov.style.cssText='position:fixed;inset:0;z-index:99999;cursor:pointer;background:transparent;';
-    ov.onclick=function(){ov.remove();document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();_fsActive=true;};
-    document.body.appendChild(ov);
-  }
-  if(!document.fullscreenElement){_fsActive=false;}
-  _escPressed=false;
-});
+function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();['fs','txt-add','save-frame'].forEach(function(id){var o=document.getElementById(id);if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}});}
+document.addEventListener('keydown',function(e){if((e.key==='f'||e.key==='F')&&!e.target.isContentEditable&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA')goFS();});
 window.addEventListener('message',function(e){
   if(!e.data)return;
-  if(e.data.type==='frame'){var c=document.getElementById('pc'),b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();if(window.opener&&!window.opener.closed&&(++_mirrorTick%2===0)){var WW=window.innerWidth,WH=window.innerHeight;if(!_mc2||_mc2.width!==WW||_mc2.height!==WH){_mc2=document.createElement('canvas');_mc2.width=WW;_mc2.height=WH;}try{drawPerformComposite(_mc2.getContext('2d'),WW,WH);}catch(_e){}createImageBitmap(_mc2).then(function(bmp){if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'mirrorFrame',bitmap:bmp},'*',[bmp]);});}}
+  if(e.data.type==='frame'){var c=document.getElementById('pc'),b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();}
   else if(e.data.type==='addClip'){var dataUrl=e.data.dataUrl;if(e.data.buffer){var blob=new Blob([e.data.buffer],{type:e.data.mimeType||'video/mp4'});dataUrl=URL.createObjectURL(blob);}addClip(e.data.id,dataUrl,e.data.mediaType,e.data.filter||'',e.data.mix||'normal',e.data.label||'',e.data.size||280);}
   else if(e.data.type==='removeClip'){var el=document.getElementById('clip-'+e.data.id);if(el)el.remove();}
   else if(e.data.type==='updateClip'){var el=document.getElementById('clip-'+e.data.id);if(el){var inn=el.querySelector('img,video');if(inn&&e.data.filter!=null)inn.style.filter=e.data.filter;if(e.data.mix!=null)el.style.mixBlendMode=e.data.mix;}}
   else if(e.data.type==='setBg'){document.body.style.background=e.data.color;}
-  else if(e.data.type==='setInvert'){_invertActive=e.data.invert;var c=document.getElementById('pc');if(c)c.style.filter=e.data.invert?'invert(1)':'none';}
-  else if(e.data.type==='mirrorKey'){if(_mirrorFocusedTxt&&document.contains(_mirrorFocusedTxt)){var t=_mirrorFocusedTxt.innerText||'';_mirrorFocusedTxt.innerText=t+e.data.key;}}
-  else if(e.data.type==='mirrorBackspace'){if(_mirrorFocusedTxt&&document.contains(_mirrorFocusedTxt)){var t2=_mirrorFocusedTxt.innerText||'';_mirrorFocusedTxt.innerText=t2.slice(0,-1);}}
-  else if(e.data.type==='mirrorEnter'){if(_mirrorFocusedTxt&&document.contains(_mirrorFocusedTxt)){var t3=_mirrorFocusedTxt.innerText||'';_mirrorFocusedTxt.innerText=t3+'\n';}}
-  else if(e.data.type==='goFS'){goFS();}
-  else if(e.data.type==='mirrorMousedown'){
-    var mx=e.data.x,my=e.data.y,W2=window.innerWidth,H2=window.innerHeight;
-    // Check if click hit one of the 3 overlay buttons (fixed positions)
-    var btns=[['addTextBox',W2-8-32,H2-44-22,32,22],['saveFrame',W2-8-52,H2-80-22,52,22],['goFS',W2-8-70,H2-8-22,70,22]];
-    var hit=false;
-    btns.forEach(function(b){if(mx>=b[1]&&mx<=b[1]+b[3]&&my>=b[2]&&my<=b[2]+b[4]){window[b[0]]&&window[b[0]]();hit=true;}});
-    if(!hit)mirrorDragStart(mx,my);
-  }
-  else if(e.data.type==='mirrorMousemove'){mirrorDragMove(e.data.x,e.data.y);if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'mirrorCursor',cursor:mirrorCursorAt(e.data.x,e.data.y)},'*');}
-  else if(e.data.type==='mirrorMouseup'){mirrorDragEnd();}
+  else if(e.data.type==='setInvert'){var c=document.getElementById('pc');if(c)c.style.filter=e.data.invert?'invert(1)':'none';}
   else if(e.data.type==='startRecord'){startPerfRecord(e.data.mimeType);}
   else if(e.data.type==='stopRecord'){stopPerfRecord();}
   else if(e.data.type==='setTextSize'){defaultTxtSize=e.data.size;}
@@ -2519,82 +2324,6 @@ function startPerfRecord(mimeType){
   _recMR.start();
 }
 function stopPerfRecord(){if(_recMR&&_recMR.state!=='inactive')_recMR.stop();else cancelAnimationFrame(_recAnim);}
-var _mDrag=null;
-function _elAt(x,y){
-  var els=Array.from(document.querySelectorAll('#clips .clip,#clips .txt-box'));
-  els.sort(function(a,b){return(parseInt(b.style.zIndex)||0)-(parseInt(a.style.zIndex)||0);});
-  for(var i=0;i<els.length;i++){var e=els[i];var l=parseInt(e.style.left)||0,t=parseInt(e.style.top)||0,w=e.offsetWidth,h=e.offsetHeight;if(x>=l&&x<=l+w&&y>=t&&y<=t+h)return e;}
-  return null;
-}
-function mirrorDragStart(x,y){
-  var el=_elAt(x,y);
-  if(!el){_mirrorFocusedTxt=null;return;}
-  el.style.zIndex=Date.now()%9000+1000;
-  var l=parseInt(el.style.left)||0,t=parseInt(el.style.top)||0,w=el.offsetWidth,h=el.offsetHeight;
-  var inResize=(x>=l+w-18&&y>=t+h-18);
-  if(inResize){_mDrag={el:el,mode:'resize',sx:x,sw:w,sh:h};return;}
-  // Check if click is in toolbar bar area of a txt-box
-  if(el.classList.contains('txt-box')){
-    var bar=el.querySelector('.txt-bar');
-    var barH=bar?bar.offsetHeight:26;
-    if(y>=t&&y<=t+barH){
-      var ctrl=mirrorTxtBarClick(el,x-l);
-      if(ctrl){mirrorHandleToolbar(el,ctrl);return;}
-      _mDrag={el:el,mode:'drag',ox:x-l,oy:y-t};return;
-    }
-    // Click in text content area — focus it
-    _mirrorFocusedTxt=el.querySelector('.txt-content');
-    if(_mirrorFocusedTxt)_mirrorFocusedTxt.focus();
-    return;
-  }
-  _mDrag={el:el,mode:'drag',ox:x-l,oy:y-t};
-}
-function mirrorDragMove(x,y){
-  if(!_mDrag)return;
-  if(_mDrag.mode==='drag'){_mDrag.el.style.left=(x-_mDrag.ox)+'px';_mDrag.el.style.top=(y-_mDrag.oy)+'px';}
-  else{var d=x-_mDrag.sx;var nw=Math.max(40,_mDrag.sw+d);var nh=Math.max(40,_mDrag.sh*(nw/_mDrag.sw));_mDrag.el.style.width=nw+'px';_mDrag.el.style.height=nh+'px';}
-}
-function mirrorDragEnd(){_mDrag=null;}
-var _mirrorFocusedTxt=null;
-function mirrorTxtBarClick(div,xInDiv){
-  // Replicate pill layout to detect which control was hit
-  var cx=4;
-  var controls=['font','size','bold','color','glow','opacity','blend','close'];
-  var widths=[39,33,19,19,19,31,39,17];
-  for(var i=0;i<controls.length;i++){if(xInDiv>=cx&&xInDiv<=cx+widths[i]){return controls[i];}cx+=widths[i]+3;}
-  return null;
-}
-function mirrorHandleToolbar(div,ctrl){
-  var content=div.querySelector('.txt-content');if(!content)return;
-  var cs=window.getComputedStyle(content);
-  if(ctrl==='bold'){var isBold=parseInt(cs.fontWeight)>=700;content.style.fontWeight=isBold?'normal':'bold';}
-  else if(ctrl==='glow'){var hasShadow=cs.textShadow&&cs.textShadow!=='none';content.style.textShadow=hasShadow?'none':'0 0 20px '+cs.color+',0 0 40px '+cs.color;}
-  else if(ctrl==='close'){div.remove();_mirrorFocusedTxt=null;}
-  else if(ctrl==='font'){
-    var fonts=['serif','sans-serif','monospace',"'Courier Prime','Courier New',monospace","'Bebas Neue',sans-serif","'Josefin Sans',sans-serif",'cursive'];
-    var cur=cs.fontFamily;var idx=fonts.findIndex(function(f){return cur.indexOf(f.replace(/'/g,'').split(',')[0].trim())>-1;});
-    content.style.fontFamily=fonts[(idx+1)%fonts.length];
-  }
-  else if(ctrl==='size'){var sz=parseFloat(cs.fontSize)||48;content.style.fontSize=Math.min(400,sz+8)+'px';}
-  else if(ctrl==='opacity'){var op=parseFloat(div.style.opacity)||1;var ops=[1,0.85,0.7,0.5,0.3,0.1];var oi=ops.findIndex(function(v){return Math.abs(v-op)<0.05;});div.style.opacity=ops[(oi+1)%ops.length];}
-  else if(ctrl==='blend'){var blends=['normal','screen','overlay','multiply','difference','luminosity','soft-light'];var bi=blends.indexOf(div.style.mixBlendMode||'normal');div.style.mixBlendMode=blends[(bi+1)%blends.length];}
-}
-function mirrorCursorAt(x,y){
-  var els=Array.from(document.querySelectorAll('#clips .clip,#clips .txt-box'));
-  var W2=window.innerWidth,H2=window.innerHeight;
-  // Check overlay buttons
-  var btns=[[W2-8-32,H2-44-22,32,22],[W2-8-52,H2-80-22,52,22],[W2-8-70,H2-8-22,70,22]];
-  for(var i=0;i<btns.length;i++){var b=btns[i];if(x>=b[0]&&x<=b[0]+b[2]&&y>=b[1]&&y<=b[1]+b[3])return 'pointer';}
-  els.sort(function(a,b){return(parseInt(b.style.zIndex)||0)-(parseInt(a.style.zIndex)||0);});
-  for(var j=0;j<els.length;j++){
-    var el=els[j];var l=parseInt(el.style.left)||0,t=parseInt(el.style.top)||0,w=el.offsetWidth,h=el.offsetHeight;
-    if(x>=l&&x<=l+w&&y>=t&&y<=t+h){
-      if(x>=l+w-18&&y>=t+h-18)return 'se-resize';
-      return 'move';
-    }
-  }
-  return 'default';
-}
 function makeDraggable(div,resize){
   var dragging=false,rx=0,ry=0,rl=0,rt=0;
   div.addEventListener('mousedown',function(e){if(e.target===resize||e.target.classList.contains('clip-btn'))return;dragging=true;rx=e.clientX;ry=e.clientY;rl=parseInt(div.style.left)||0;rt=parseInt(div.style.top)||0;div.style.zIndex=Date.now()%9000+1000;e.preventDefault();});
@@ -2616,7 +2345,7 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
   var closeBtn=document.createElement('button');closeBtn.className='clip-btn';closeBtn.textContent='×';closeBtn.onclick=function(){div.remove();};bar.appendChild(closeBtn);
   div.appendChild(bar);
   var inner;
-  if(mediaType==='video'){inner=document.createElement('video');inner.src=dataUrl;inner.autoplay=true;inner.loop=true;inner.muted=true;inner.playsInline=true;inner.preload='auto';}
+  if(mediaType==='video'){inner=document.createElement('video');inner.src=dataUrl;inner.autoplay=true;inner.loop=true;inner.muted=true;inner.playsInline=true;}
   else{inner=document.createElement('img');inner.src=dataUrl;}
   inner.style.cssText='display:block;width:100%;height:100%;object-fit:contain;';
   inner.style.filter=filter||'brightness(1.06) saturate(1.35) sepia(0.22)';
@@ -2630,7 +2359,7 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
     pw.document.close();
     performWinRef.current = pw;
     setPerformOpen(true);
-    pw.focus();
+    // Send any existing clips once window has loaded
   }
 
   function closePerformWindow() {
@@ -3107,71 +2836,35 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
               </div>
             </div>
 
-            {/* Canvas area with optional left toggle */}
-            <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-              {/* Left view toggle — only when perform window is open */}
-              {performOpen && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 2, paddingTop: 2, flexShrink: 0 }}>
-                  {[["edit", false], ["perform", true]].map(([label, val]) => (
-                    <button key={label} onClick={() => setShowMirror(val)}
-                      style={{ ...btn(showMirror === val), borderColor: showMirror === val ? "#9933ff" : ng20, color: showMirror === val ? "#cc99ff" : "rgba(255,255,255,0.35)", fontSize: 10, padding: "3px 6px", writingMode: "vertical-lr", letterSpacing: 1 }}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Canvas stack: edit view */}
-              <div style={{ display: showMirror ? "none" : "block", position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)`, filter: editInvert ? "invert(1)" : "none" }}>
-                <canvas ref={canvasRef}
-                  onMouseDown={(e) => { if (ovActiveTool === "grid") { setMouseDown(true); paintAtEvent(e); } }}
-                  onMouseMove={(e) => { if (ovActiveTool === "grid" && mouseDown) paintAtEvent(e); }}
-                  onMouseUp={() => setMouseDown(false)}
-                  onMouseLeave={() => setMouseDown(false)}
-                  style={{ display: "block", position: "relative", cursor: ovActiveTool === "grid" ? "crosshair" : "default" }}
-                />
-                <canvas ref={notationCanvasRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
-                <canvas ref={overlayCanvasRef}
-                  style={{ position: "absolute", top: 0, left: 0,
-                    pointerEvents: ovActiveTool === "brush" && ovType ? "auto" : "none",
-                    cursor: "crosshair",
-                    mixBlendMode: ovType ? ovBlend : "normal" }}
-                  onMouseDown={(e) => { saveMaskSnapshot(); ovIsPaintingRef.current = true; ovPaintAt(e.clientX, e.clientY); }}
-                  onMouseMove={(e) => {
-                    const rect = overlayCanvasRef.current?.getBoundingClientRect();
-                    if (rect) ovMouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top, over: true };
-                    if (ovIsPaintingRef.current) ovPaintAt(e.clientX, e.clientY);
-                  }}
-                  onMouseUp={() => { ovIsPaintingRef.current = false; }}
-                  onMouseLeave={() => { ovIsPaintingRef.current = false; ovMouseRef.current = { ...ovMouseRef.current, over: false }; }}
-                  onMouseEnter={() => { ovMouseRef.current = { ...ovMouseRef.current, over: true }; }}
-                />
-              </div>
-
-              {/* Perform mirror view — exact aspect ratio, draggable clips */}
-              {performOpen && (
-                <div style={{ display: showMirror ? "block" : "none", position: "relative", border: `1px solid #9933ff44`, borderRadius: 10, overflow: "hidden", lineHeight: 0, background: "#000", aspectRatio: performAspect, width: "100%" }}>
-                  <canvas ref={performPreviewRef}
-                    style={{ display: "block", position: "absolute", inset: 0, width: "100%", height: "100%", cursor: "move" }}
-                    onMouseDown={e => {
-                      const pw = performWinRef.current; if (!pw || pw.closed) return;
-                      const r = performPreviewRef.current.getBoundingClientRect();
-                      const x = (e.clientX - r.left) * (performPreviewRef.current.width / r.width);
-                      const y = (e.clientY - r.top) * (performPreviewRef.current.height / r.height);
-                      pw.postMessage({ type: "mirrorMousedown", x, y }, "*");
-                    }}
-                    onMouseMove={e => {
-                      const pw = performWinRef.current; if (!pw || pw.closed) return;
-                      const r = performPreviewRef.current.getBoundingClientRect();
-                      const x = (e.clientX - r.left) * (performPreviewRef.current.width / r.width);
-                      const y = (e.clientY - r.top) * (performPreviewRef.current.height / r.height);
-                      pw.postMessage({ type: "mirrorMousemove", x, y }, "*");
-                    }}
-                    onMouseUp={() => performWinRef.current?.postMessage({ type: "mirrorMouseup" }, "*")}
-                    onMouseLeave={() => performWinRef.current?.postMessage({ type: "mirrorMouseup" }, "*")}
-                  />
-                </div>
-              )}
+            {/* Canvas stack: overlayBg (behind) → canvas → notation → cursor */}
+            <div style={{ position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)`, }}>
+              {/* overlay image/video — BEHIND stitches */}
+              {/* main stitch canvas */}
+              <canvas ref={canvasRef}
+                onMouseDown={(e) => { if (ovActiveTool === "grid") { setMouseDown(true); paintAtEvent(e); } }}
+                onMouseMove={(e) => { if (ovActiveTool === "grid" && mouseDown) paintAtEvent(e); }}
+                onMouseUp={() => setMouseDown(false)}
+                onMouseLeave={() => setMouseDown(false)}
+                style={{ display: "block", position: "relative", cursor: ovActiveTool === "grid" ? "crosshair" : "default", filter: editInvert ? "invert(1)" : "none" }}
+              />
+              {/* notation overlay */}
+              <canvas ref={notationCanvasRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
+              {/* brush cursor — on top, captures mouse in brush mode */}
+              <canvas ref={overlayCanvasRef}
+                style={{ position: "absolute", top: 0, left: 0,
+                  pointerEvents: ovActiveTool === "brush" && ovType ? "auto" : "none",
+                  cursor: "crosshair",
+                  mixBlendMode: ovType ? ovBlend : "normal" }}
+                onMouseDown={(e) => { saveMaskSnapshot(); ovIsPaintingRef.current = true; ovPaintAt(e.clientX, e.clientY); }}
+                onMouseMove={(e) => {
+                  const rect = overlayCanvasRef.current?.getBoundingClientRect();
+                  if (rect) ovMouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top, over: true };
+                  if (ovIsPaintingRef.current) ovPaintAt(e.clientX, e.clientY);
+                }}
+                onMouseUp={() => { ovIsPaintingRef.current = false; }}
+                onMouseLeave={() => { ovIsPaintingRef.current = false; ovMouseRef.current = { ...ovMouseRef.current, over: false }; }}
+                onMouseEnter={() => { ovMouseRef.current = { ...ovMouseRef.current, over: true }; }}
+              />
             </div>
 
             {/* Score view */}
