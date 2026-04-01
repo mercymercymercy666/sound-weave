@@ -1769,9 +1769,13 @@ export default function App() {
 
   const mirrorDraggingRef = useRef(false);
 
-  // Receive composite mirror frames back from perform window
+  // Receive composite mirror frames + cursor feedback from perform window
   useEffect(() => {
     const handler = (e) => {
+      if (e.data?.type === "mirrorCursor") {
+        if (performPreviewRef.current) performPreviewRef.current.style.cursor = e.data.cursor;
+        return;
+      }
       if (e.data?.type !== "mirrorFrame") return;
       const preview = performPreviewRef.current;
       if (!preview) { e.data.bitmap.close(); return; }
@@ -2325,6 +2329,21 @@ function drawPerformComposite(ctx,W,H){
     var filt=inn.style.filter;if(filt)ctx.filter=filt;
     try{ctx.drawImage(inn,dx,dy,dw,dh);}catch(e){}
     ctx.restore();
+    // clip bar (name + ×)
+    var barH=22;
+    var label='';var nameEl=div.querySelector('.clip-name');if(nameEl)label=nameEl.textContent||'';
+    ctx.save();
+    ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(l,t-barH,bw,barH);
+    ctx.fillStyle='rgba(204,204,204,0.9)';ctx.font='10px monospace';ctx.textBaseline='middle';
+    ctx.fillText(label,l+4,t-barH+barH/2,bw-22);
+    ctx.fillStyle='rgba(255,255,255,0.85)';ctx.font='13px monospace';
+    ctx.fillText('×',l+bw-15,t-barH+barH/2);
+    ctx.textBaseline='alphabetic';ctx.restore();
+    // orange resize handle triangle
+    ctx.save();
+    ctx.fillStyle='rgba(255,153,51,0.85)';
+    ctx.beginPath();ctx.moveTo(l+bw-14,t+bh);ctx.lineTo(l+bw,t+bh-14);ctx.lineTo(l+bw,t+bh);ctx.closePath();ctx.fill();
+    ctx.restore();
   });
   document.querySelectorAll('#clips .txt-box').forEach(function(div){
     var content=div.querySelector('.txt-content');if(!content)return;
@@ -2391,11 +2410,18 @@ window.addEventListener('message',function(e){
     var el=document.elementFromPoint(x,y);
     if(!el)return;
     if(el.contentEditable==='true'||el.isContentEditable){el.focus();return;}
+    if(el.tagName==='BUTTON'||el.onclick){el.click();return;}
     el.dispatchEvent(new MouseEvent('mousedown',{clientX:x,clientY:y,bubbles:true,cancelable:true}));
+  }
+  else if(e.data.type==='perfAction'){
+    if(e.data.action==='addTextBox')addTextBox();
+    else if(e.data.action==='saveFrame')saveFrame();
+    else if(e.data.action==='goFS')goFS();
   }
   else if(e.data.type==='mirrorMousemove'){window.dispatchEvent(new MouseEvent('mousemove',{clientX:e.data.x,clientY:e.data.y,bubbles:true}));}
   else if(e.data.type==='mirrorMouseup'){window.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));}
   else if(e.data.type==='mirrorKey'){var fc=document.querySelector('.txt-content:focus');if(!fc)return;var k=e.data.key;if(k==='Backspace'){document.execCommand('delete');}else if(k==='Enter'){document.execCommand('insertLineBreak');}else if(k.length===1){document.execCommand('insertText',false,k);}}
+  else if(e.data.type==='mirrorCursorMove'){var cx=e.data.x,cy=e.data.y,cel=document.elementFromPoint(cx,cy);var cur='default';if(cel){if(cel.classList.contains('clip-resize')||cel.classList.contains('txt-resize'))cur='se-resize';else if(cel.closest&&(cel.closest('.clip')||cel.closest('.txt-bar')))cur='move';else if(cel.isContentEditable||cel.contentEditable==='true')cur='text';}if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'mirrorCursor',cursor:cur},'*');}
 });
 var _recAnim,_recMR,_recChunks=[],_recCanvas;
 function startPerfRecord(mimeType){
@@ -2981,9 +3007,19 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
 
               {/* Perform mirror view */}
               {performOpen && (
-                <div style={{ display: showMirror ? "block" : "none", position: "relative", border: `1px solid #9933ff44`, borderRadius: 10, overflow: "hidden", lineHeight: 0, background: "#000" }}>
+                <div style={{ display: showMirror ? "block" : "none", position: "relative", border: `1px solid #9933ff44`, borderRadius: 10, background: "#000", lineHeight: 0 }}>
                   <canvas ref={performPreviewRef}
-                    style={{ display: "block", width: "100%", height: "auto", cursor: "crosshair" }}
+                    style={{ display: "block", width: "100%", height: "auto", borderRadius: 10 }}
+                    onMouseMove={(e) => {
+                      const canvas = performPreviewRef.current;
+                      const pw = performWinRef.current;
+                      if (!canvas || !pw || pw.closed) return;
+                      const rect = canvas.getBoundingClientRect();
+                      const sx = canvas.width / rect.width;
+                      const sy = canvas.height / rect.height;
+                      pw.postMessage({ type: "mirrorCursorMove", x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy }, "*");
+                    }}
+                    onMouseLeave={() => { if (performPreviewRef.current) performPreviewRef.current.style.cursor = "default"; }}
                     onMouseDown={(e) => {
                       const canvas = performPreviewRef.current;
                       const pw = performWinRef.current;
@@ -2994,6 +3030,16 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
                       mirrorDraggingRef.current = true;
                       pw.postMessage({ type: "mirrorMousedown", x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy }, "*");
                     }} />
+                  {/* Mirror overlay buttons — match perform window */}
+                  {(() => {
+                    const mirBtn = (label, bottom, action) => (
+                      <div key={action} onClick={() => performWinRef.current?.postMessage({ type: "perfAction", action }, "*")}
+                        style={{ position: "absolute", bottom, right: 8, background: "rgba(0,0,0,0.55)", color: "rgba(255,255,255,0.55)", font: (action === "addTextBox" ? "bold " : "") + "10px/1 monospace", cursor: "pointer", padding: "4px 7px", borderRadius: 4, border: "1px solid rgba(255,255,255,0.14)", letterSpacing: 1, userSelect: "none", zIndex: 10 }}>
+                        {label}
+                      </div>
+                    );
+                    return [mirBtn("T+", 80, "addTextBox"), mirBtn("⊡ frame", 44, "saveFrame"), mirBtn("⛶ fs", 8, "goFS")];
+                  })()}
                 </div>
               )}
             </div>
