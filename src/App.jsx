@@ -1431,6 +1431,7 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [performOpen, setPerformOpen] = useState(false);
   const performWinRef = useRef(null);
+  const performPreviewRef = useRef(null);
   const [clips, setClips] = useState([]);
   const [clipStyles, setClipStyles] = useState({}); // id -> style name
   const [clipBlends, setClipBlends] = useState({}); // id -> blend mode
@@ -1483,6 +1484,7 @@ export default function App() {
   // Notation + score overlays
   const [showNotation, setShowNotation] = useState(false);
   const [showScore, setShowScore] = useState(false);
+  const [showMirror, setShowMirror] = useState(false);
 
   // Brush/media overlay
   const [ovActiveTool, setOvActiveTool] = useState("grid"); // "grid"|"brush"
@@ -1765,6 +1767,21 @@ export default function App() {
 
   editInvertRef.current = editInvert; // inline — always current before RAF reads it
 
+  // Receive composite mirror frames back from perform window
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type !== "mirrorFrame") return;
+      const preview = performPreviewRef.current;
+      if (!preview) { e.data.bitmap.close(); return; }
+      const bmp = e.data.bitmap;
+      if (preview.width !== bmp.width || preview.height !== bmp.height) { preview.width = bmp.width; preview.height = bmp.height; }
+      preview.getContext("2d").drawImage(bmp, 0, 0);
+      bmp.close();
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
   // Sync perform window background with editInvert
   useEffect(() => {
     const pw = performWinRef.current;
@@ -1894,6 +1911,8 @@ export default function App() {
     const img = new Image();
     img.onload = () => setBgImg(img);
     img.src = url;
+    const pw = performWinRef.current;
+    if (pw && !pw.closed) pw.focus();
   }
 
   function handleMaskImage(file) {
@@ -2139,7 +2158,7 @@ export default function App() {
     const html = `<!doctype html><html><head><style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#000;overflow:hidden;width:100vw;height:100vh}
-#pc{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;image-rendering:pixelated;background:#000}
+#pc{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;image-rendering:pixelated;background:transparent}
 #clips{position:absolute;inset:0;pointer-events:none}
 .clip{position:absolute;pointer-events:all;cursor:move;user-select:none;min-width:40px;min-height:40px}
 .clip img,.clip video{display:block;width:100%;height:100%;object-fit:contain}
@@ -2168,7 +2187,7 @@ body{background:#000;overflow:hidden;width:100vw;height:100vh}
 <div id="save-frame" onclick="saveFrame()">⊡ frame</div>
 <div id="fs" onclick="goFS()">⛶ fullscreen</div>
 <script>
-var clipNum=0,txtNum=0,defaultTxtSize=80;
+var clipNum=0,txtNum=0,defaultTxtSize=80,_mc2=null,_invertActive=false;
 var PERF_FONTS=[['serif','Serif'],['sans-serif','Sans'],['monospace','Mono'],["'Courier Prime','Courier New',monospace",'Courier'],["'Bebas Neue',sans-serif",'Bebas'],["'Josefin Sans',sans-serif",'Josefin'],['cursive','Cursive']];
 function addTextBox(){
   var id='txt-'+(++txtNum);
@@ -2234,8 +2253,9 @@ function makeTextDraggable(div,handle,rsz){
 }
 function drawPerformComposite(ctx,W,H){
   var pc=document.getElementById('pc');
-  var isInv=pc.style.filter==='invert(1)';
+  var isInv=_invertActive;
   ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
   if(pc.width&&pc.height){
     var scale=Math.min(W/pc.width,H/pc.height);
     var dw=pc.width*scale,dh=pc.height*scale;
@@ -2284,16 +2304,29 @@ function saveFrame(){
     else{var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(url);},1000);}
   });
 }
-function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();['fs','txt-add','save-frame'].forEach(function(id){var o=document.getElementById(id);if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}});}
-document.addEventListener('keydown',function(e){if((e.key==='f'||e.key==='F')&&!e.target.isContentEditable&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA')goFS();});
+var _fsActive=false,_escPressed=false;
+function tryReFS(){if(_fsActive&&!document.fullscreenElement)document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(function(){});}
+function goFS(){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();_fsActive=true;['fs','txt-add','save-frame'].forEach(function(id){var o=document.getElementById(id);if(o){o.style.opacity=0;setTimeout(function(){o.remove()},400);}});}
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape')_escPressed=true;
+  else tryReFS();
+  if((e.key==='f'||e.key==='F')&&!e.target.isContentEditable&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA')goFS();
+});
+document.addEventListener('click',tryReFS);
+window.addEventListener('focus',tryReFS);
+document.addEventListener('fullscreenchange',function(){
+  if(!document.fullscreenElement&&_fsActive&&!_escPressed){setTimeout(tryReFS,50);}
+  if(!document.fullscreenElement){_fsActive=false;}
+  _escPressed=false;
+});
 window.addEventListener('message',function(e){
   if(!e.data)return;
-  if(e.data.type==='frame'){var c=document.getElementById('pc'),b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();}
+  if(e.data.type==='frame'){var c=document.getElementById('pc'),b=e.data.bitmap;c.width=b.width;c.height=b.height;c.getContext('2d').drawImage(b,0,0);b.close();if(window.opener&&!window.opener.closed){var WW=window.innerWidth,WH=window.innerHeight;if(!_mc2||_mc2.width!==WW||_mc2.height!==WH){_mc2=document.createElement('canvas');_mc2.width=WW;_mc2.height=WH;}drawPerformComposite(_mc2.getContext('2d'),WW,WH);createImageBitmap(_mc2).then(function(bmp){if(window.opener&&!window.opener.closed)window.opener.postMessage({type:'mirrorFrame',bitmap:bmp},'*',[bmp]);});}}
   else if(e.data.type==='addClip'){var dataUrl=e.data.dataUrl;if(e.data.buffer){var blob=new Blob([e.data.buffer],{type:e.data.mimeType||'video/mp4'});dataUrl=URL.createObjectURL(blob);}addClip(e.data.id,dataUrl,e.data.mediaType,e.data.filter||'',e.data.mix||'normal',e.data.label||'',e.data.size||280);}
   else if(e.data.type==='removeClip'){var el=document.getElementById('clip-'+e.data.id);if(el)el.remove();}
   else if(e.data.type==='updateClip'){var el=document.getElementById('clip-'+e.data.id);if(el){var inn=el.querySelector('img,video');if(inn&&e.data.filter!=null)inn.style.filter=e.data.filter;if(e.data.mix!=null)el.style.mixBlendMode=e.data.mix;}}
   else if(e.data.type==='setBg'){document.body.style.background=e.data.color;}
-  else if(e.data.type==='setInvert'){var c=document.getElementById('pc');if(c)c.style.filter=e.data.invert?'invert(1)':'none';}
+  else if(e.data.type==='setInvert'){_invertActive=e.data.invert;var c=document.getElementById('pc');if(c)c.style.filter=e.data.invert?'invert(1)':'none';}
   else if(e.data.type==='startRecord'){startPerfRecord(e.data.mimeType);}
   else if(e.data.type==='stopRecord'){stopPerfRecord();}
   else if(e.data.type==='setTextSize'){defaultTxtSize=e.data.size;}
@@ -2375,6 +2408,9 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
     const id = clipNextIdRef.current++;
     const clip = { id, name: file.name, blobUrl: url, type, mimeType: file.type || (isVideo ? "video/mp4" : "image/png") };
     setClips(prev => [...prev, clip]);
+    // Refocus perform window so it can re-enter fullscreen if it was knocked out by the file dialog
+    const pw = performWinRef.current;
+    if (pw && !pw.closed) pw.focus();
   }
 
   function removeClip(id) {
@@ -2836,35 +2872,54 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
               </div>
             </div>
 
-            {/* Canvas stack: overlayBg (behind) → canvas → notation → cursor */}
-            <div style={{ position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)`, }}>
-              {/* overlay image/video — BEHIND stitches */}
-              {/* main stitch canvas */}
-              <canvas ref={canvasRef}
-                onMouseDown={(e) => { if (ovActiveTool === "grid") { setMouseDown(true); paintAtEvent(e); } }}
-                onMouseMove={(e) => { if (ovActiveTool === "grid" && mouseDown) paintAtEvent(e); }}
-                onMouseUp={() => setMouseDown(false)}
-                onMouseLeave={() => setMouseDown(false)}
-                style={{ display: "block", position: "relative", cursor: ovActiveTool === "grid" ? "crosshair" : "default", filter: editInvert ? "invert(1)" : "none" }}
-              />
-              {/* notation overlay */}
-              <canvas ref={notationCanvasRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
-              {/* brush cursor — on top, captures mouse in brush mode */}
-              <canvas ref={overlayCanvasRef}
-                style={{ position: "absolute", top: 0, left: 0,
-                  pointerEvents: ovActiveTool === "brush" && ovType ? "auto" : "none",
-                  cursor: "crosshair",
-                  mixBlendMode: ovType ? ovBlend : "normal" }}
-                onMouseDown={(e) => { saveMaskSnapshot(); ovIsPaintingRef.current = true; ovPaintAt(e.clientX, e.clientY); }}
-                onMouseMove={(e) => {
-                  const rect = overlayCanvasRef.current?.getBoundingClientRect();
-                  if (rect) ovMouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top, over: true };
-                  if (ovIsPaintingRef.current) ovPaintAt(e.clientX, e.clientY);
-                }}
-                onMouseUp={() => { ovIsPaintingRef.current = false; }}
-                onMouseLeave={() => { ovIsPaintingRef.current = false; ovMouseRef.current = { ...ovMouseRef.current, over: false }; }}
-                onMouseEnter={() => { ovMouseRef.current = { ...ovMouseRef.current, over: true }; }}
-              />
+            {/* Canvas area with optional left toggle */}
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+              {/* Left view toggle — only when perform window is open */}
+              {performOpen && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, paddingTop: 2, flexShrink: 0 }}>
+                  {[["edit", false], ["perform", true]].map(([label, val]) => (
+                    <button key={label} onClick={() => setShowMirror(val)}
+                      style={{ ...btn(showMirror === val), borderColor: showMirror === val ? "#9933ff" : ng20, color: showMirror === val ? "#cc99ff" : "rgba(255,255,255,0.35)", fontSize: 10, padding: "3px 6px", writingMode: "vertical-lr", letterSpacing: 1 }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Canvas stack: edit view */}
+              <div style={{ display: showMirror ? "none" : "block", position: "relative", border: `1px solid ${ng20}`, borderRadius: 10, overflow: "hidden", lineHeight: 0, boxShadow: `0 0 20px rgba(57,255,20,0.06)` }}>
+                <canvas ref={canvasRef}
+                  onMouseDown={(e) => { if (ovActiveTool === "grid") { setMouseDown(true); paintAtEvent(e); } }}
+                  onMouseMove={(e) => { if (ovActiveTool === "grid" && mouseDown) paintAtEvent(e); }}
+                  onMouseUp={() => setMouseDown(false)}
+                  onMouseLeave={() => setMouseDown(false)}
+                  style={{ display: "block", position: "relative", cursor: ovActiveTool === "grid" ? "crosshair" : "default", filter: editInvert ? "invert(1)" : "none" }}
+                />
+                <canvas ref={notationCanvasRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
+                <canvas ref={overlayCanvasRef}
+                  style={{ position: "absolute", top: 0, left: 0,
+                    pointerEvents: ovActiveTool === "brush" && ovType ? "auto" : "none",
+                    cursor: "crosshair",
+                    mixBlendMode: ovType ? ovBlend : "normal" }}
+                  onMouseDown={(e) => { saveMaskSnapshot(); ovIsPaintingRef.current = true; ovPaintAt(e.clientX, e.clientY); }}
+                  onMouseMove={(e) => {
+                    const rect = overlayCanvasRef.current?.getBoundingClientRect();
+                    if (rect) ovMouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top, over: true };
+                    if (ovIsPaintingRef.current) ovPaintAt(e.clientX, e.clientY);
+                  }}
+                  onMouseUp={() => { ovIsPaintingRef.current = false; }}
+                  onMouseLeave={() => { ovIsPaintingRef.current = false; ovMouseRef.current = { ...ovMouseRef.current, over: false }; }}
+                  onMouseEnter={() => { ovMouseRef.current = { ...ovMouseRef.current, over: true }; }}
+                />
+              </div>
+
+              {/* Perform mirror view */}
+              {performOpen && (
+                <div style={{ display: showMirror ? "block" : "none", position: "relative", border: `1px solid #9933ff44`, borderRadius: 10, overflow: "hidden", lineHeight: 0, background: "#000" }}>
+                  <canvas ref={performPreviewRef}
+                    style={{ display: "block", width: "100%", height: "auto" }} />
+                </div>
+              )}
             </div>
 
             {/* Score view */}
