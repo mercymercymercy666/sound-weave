@@ -1767,6 +1767,8 @@ export default function App() {
 
   editInvertRef.current = editInvert; // inline — always current before RAF reads it
 
+  const mirrorDraggingRef = useRef(false);
+
   // Receive composite mirror frames back from perform window
   useEffect(() => {
     const handler = (e) => {
@@ -1774,7 +1776,11 @@ export default function App() {
       const preview = performPreviewRef.current;
       if (!preview) { e.data.bitmap.close(); return; }
       const bmp = e.data.bitmap;
-      if (preview.width !== bmp.width || preview.height !== bmp.height) { preview.width = bmp.width; preview.height = bmp.height; }
+      if (preview.width !== bmp.width || preview.height !== bmp.height) {
+        preview.width = bmp.width;
+        preview.height = bmp.height;
+        preview.style.aspectRatio = `${bmp.width} / ${bmp.height}`;
+      }
       preview.getContext("2d").drawImage(bmp, 0, 0);
       bmp.close();
     };
@@ -1820,6 +1826,48 @@ export default function App() {
     return () => document.removeEventListener("keydown", handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Relay keystrokes to focused text box in perform window
+  useEffect(() => {
+    if (!performOpen) return;
+    const handler = (e) => {
+      const pw = performWinRef.current;
+      if (!pw || pw.closed) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "Backspace" || e.key === "Enter" || e.key.length === 1) {
+        e.preventDefault();
+        pw.postMessage({ type: "mirrorKey", key: e.key }, "*");
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [performOpen]);
+
+  // Relay mouse drag from mirror canvas to perform window clips/text
+  useEffect(() => {
+    if (!performOpen) return;
+    const move = (e) => {
+      if (!mirrorDraggingRef.current) return;
+      const canvas = performPreviewRef.current;
+      const pw = performWinRef.current;
+      if (!canvas || !pw || pw.closed) return;
+      const rect = canvas.getBoundingClientRect();
+      const sx = canvas.width / rect.width;
+      const sy = canvas.height / rect.height;
+      pw.postMessage({ type: "mirrorMousemove", x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy }, "*");
+    };
+    const up = () => {
+      if (!mirrorDraggingRef.current) return;
+      mirrorDraggingRef.current = false;
+      const pw = performWinRef.current;
+      if (pw && !pw.closed) pw.postMessage({ type: "mirrorMouseup" }, "*");
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+    return () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
+  }, [performOpen]);
 
   // Overlay RAF loop — draws overlay + cursor on overlayCanvasRef (on top of stitches, blend modes let stitches show through)
   useEffect(() => {
@@ -2264,10 +2312,18 @@ function drawPerformComposite(ctx,W,H){
   }
   document.querySelectorAll('#clips .clip').forEach(function(div){
     var inn=div.querySelector('img,video');if(!inn)return;
-    var l=parseInt(div.style.left)||0,t=parseInt(div.style.top)||0,w=div.offsetWidth,h=div.offsetHeight;
+    var l=parseInt(div.style.left)||0,t=parseInt(div.style.top)||0,bw=div.offsetWidth,bh=div.offsetHeight;
+    var nw=inn.naturalWidth||inn.videoWidth||bw,nh=inn.naturalHeight||inn.videoHeight||bh;
+    if(!nw||!nh)return;
+    // object-fit: contain — letterbox within clip box
+    var sc=Math.min(bw/nw,bh/nh);
+    var dw=nw*sc,dh=nh*sc;
+    var dx=l+(bw-dw)/2,dy=t+(bh-dh)/2;
     ctx.save();
     var mix=div.style.mixBlendMode;if(mix&&mix!=='normal')ctx.globalCompositeOperation=mix;
-    try{ctx.drawImage(inn,l,t,w,h);}catch(e){}
+    ctx.globalAlpha=parseFloat(div.style.opacity)||1;
+    var filt=inn.style.filter;if(filt)ctx.filter=filt;
+    try{ctx.drawImage(inn,dx,dy,dw,dh);}catch(e){}
     ctx.restore();
   });
   document.querySelectorAll('#clips .txt-box').forEach(function(div){
@@ -2330,6 +2386,16 @@ window.addEventListener('message',function(e){
   else if(e.data.type==='startRecord'){startPerfRecord(e.data.mimeType);}
   else if(e.data.type==='stopRecord'){stopPerfRecord();}
   else if(e.data.type==='setTextSize'){defaultTxtSize=e.data.size;}
+  else if(e.data.type==='mirrorMousedown'){
+    var x=e.data.x,y=e.data.y;
+    var el=document.elementFromPoint(x,y);
+    if(!el)return;
+    if(el.contentEditable==='true'||el.isContentEditable){el.focus();return;}
+    el.dispatchEvent(new MouseEvent('mousedown',{clientX:x,clientY:y,bubbles:true,cancelable:true}));
+  }
+  else if(e.data.type==='mirrorMousemove'){window.dispatchEvent(new MouseEvent('mousemove',{clientX:e.data.x,clientY:e.data.y,bubbles:true}));}
+  else if(e.data.type==='mirrorMouseup'){window.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));}
+  else if(e.data.type==='mirrorKey'){var fc=document.querySelector('.txt-content:focus');if(!fc)return;var k=e.data.key;if(k==='Backspace'){document.execCommand('delete');}else if(k==='Enter'){document.execCommand('insertLineBreak');}else if(k.length===1){document.execCommand('insertText',false,k);}}
 });
 var _recAnim,_recMR,_recChunks=[],_recCanvas;
 function startPerfRecord(mimeType){
@@ -2917,7 +2983,17 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
               {performOpen && (
                 <div style={{ display: showMirror ? "block" : "none", position: "relative", border: `1px solid #9933ff44`, borderRadius: 10, overflow: "hidden", lineHeight: 0, background: "#000" }}>
                   <canvas ref={performPreviewRef}
-                    style={{ display: "block", width: "100%", height: "auto" }} />
+                    style={{ display: "block", width: "100%", height: "auto", cursor: "crosshair" }}
+                    onMouseDown={(e) => {
+                      const canvas = performPreviewRef.current;
+                      const pw = performWinRef.current;
+                      if (!canvas || !pw || pw.closed) return;
+                      const rect = canvas.getBoundingClientRect();
+                      const sx = canvas.width / rect.width;
+                      const sy = canvas.height / rect.height;
+                      mirrorDraggingRef.current = true;
+                      pw.postMessage({ type: "mirrorMousedown", x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy }, "*");
+                    }} />
                 </div>
               )}
             </div>
