@@ -761,7 +761,7 @@ function drawNotationAtRow(ctx, bins, energy01, cursorY, color, alpha, cell, col
 
 // Draws a parchment/twilight knit-stitch pattern — V-shapes per cell, per-layer color fills
 function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
-  const { rows, cols, maskImg = null, invert = false,
+  const { rows, cols, maskImg = null, invert = false, stitchMono = false,
     warpColor = "#c8a96e", cc = "#e8d5b7",
     colorAlpha = 0.85, ccAlpha = 0.18 } = opts;
   canvas.width = cols * cell;
@@ -802,9 +802,10 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
   for (const L of layers) {
     const grid01 = grids[L.id];
     if (!grid01) continue;
+    const [lr, lg, lb] = stitchMono ? [wpR, wpG, wpB] : parseColor(L.color);
 
-    // Square fill at low opacity — use cc color
-    ctx.fillStyle = `rgb(${ccR},${ccG},${ccB})`;
+    // Square fill at low opacity — use layer color
+    ctx.fillStyle = `rgb(${lr},${lg},${lb})`;
     ctx.globalAlpha = ccAlpha;
     ctx.globalCompositeOperation = "source-over";
     for (let y = 0; y < rows; y++) {
@@ -813,8 +814,8 @@ function drawStitch(canvas, grids, layers, bgImg, cell, opts = {}) {
         if (row[x] === 1) ctx.fillRect(x * cell, y * cell, cell, cell);
       }
     }
-    // V-stroke on top — use warpColor (MC)
-    ctx.strokeStyle = `rgb(${wpR},${wpG},${wpB})`;
+    // V-stroke on top — use layer color
+    ctx.strokeStyle = `rgb(${lr},${lg},${lb})`;
     ctx.lineWidth = Math.max(1.5, cell * 0.16);
     ctx.lineCap = "round"; ctx.lineJoin = "round";
     ctx.globalCompositeOperation = bgImg ? "multiply" : "source-over";
@@ -1425,6 +1426,7 @@ export default function App() {
   const [maskImg, setMaskImg] = useState(null);
   const [patternMode, setPatternMode] = useState("weave"); // "weave"|"lace"|"chart"|"stitch"
   const [stitchInvert, setStitchInvert] = useState(false);
+  const [stitchMono, setStitchMono] = useState(false);
   const [editInvert, setEditInvert] = useState(false);
   const editInvertRef = useRef(false);
 
@@ -1608,12 +1610,12 @@ export default function App() {
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
-    const drawOpts = { rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, invert: stitchInvert };
+    const drawOpts = { rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, invert: stitchInvert, stitchMono };
     if (patternMode === "lace")        drawLace(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
     else if (patternMode === "chart")  drawChart(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
     else if (patternMode === "stitch") drawStitch(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
     else                               drawWeave(c, grids, LAYERS, bgImg, clamp(cell, 4, 30), drawOpts);
-  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, stitchInvert]);
+  }, [patternMode, grids, LAYERS, bgImg, cell, rows, cols, warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha, borderRadius, sizeVariation, posterizeLevels, maskImg, stitchInvert, stitchMono]);
 
   // Video guide — sample frames into imageGuide at ~15fps
   useEffect(() => {
@@ -3413,10 +3415,16 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
               ))}
             </div>
             {patternMode === "stitch" && (
-              <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, cursor: "pointer", marginTop: 10 }}>
-                <input type="checkbox" checked={stitchInvert} onChange={(e) => setStitchInvert(e.target.checked)} />
-                invert stitch fill
-              </label>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10 }}>
+                <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, cursor: "pointer" }}>
+                  <input type="checkbox" checked={stitchInvert} onChange={(e) => setStitchInvert(e.target.checked)} />
+                  invert stitch fill
+                </label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, cursor: "pointer" }}>
+                  <input type="checkbox" checked={stitchMono} onChange={(e) => setStitchMono(e.target.checked)} />
+                  monochromatic
+                </label>
+              </div>
             )}
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid #1e1e1e`, display: "flex", gap: 16, flexWrap: "wrap" }}>
               <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, cursor: "pointer" }}>
