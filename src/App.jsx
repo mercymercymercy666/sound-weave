@@ -1393,6 +1393,7 @@ export default function App() {
   const [layerColors, setLayerColors] = useState(DEFAULT_LAYER_BAND_COLORS);
   const [layerBand, setLayerBand] = useState({ A:"all", B:"all", C:"all", D:"all", F:"all", G:"all", H:"all", I:"all", J:"all", K:"all" });
   const layerBandRef = useRef(layerBand); layerBandRef.current = layerBand;
+  const gainsRef = useRef(gains); gainsRef.current = gains;
 
   const LAYERS = useMemo(() => [
     { id: "A", name: "MIC",     type: "mic",  color: layerColors.A[layerBand.A ?? "all"] },
@@ -1473,6 +1474,7 @@ export default function App() {
   const [speeds, setSpeeds]         = useState({ A: 10,  B: 10,  C: 10,  D: 10,  F: 10,  G: 10,  H: 10,  I: 10,  J: 10,  K: 10 });
   const [thresholds, setThresholds] = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55, I: 0.55, J: 0.55, K: 0.55 });
   const [alphas, setAlphas]         = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55, I: 0.55, J: 0.55, K: 0.55 });
+  const [gains, setGains]           = useState({ A: 1,    B: 1,    C: 1,    D: 1,    F: 1,    G: 1,    H: 1,    I: 1,    J: 1,    K: 1 });
   const [audioDevices, setAudioDevices] = useState([]);
   const [deviceSel, setDeviceSel]   = useState({ I: "", J: "", K: "" });
   const [deviceErr, setDeviceErr]   = useState({ I: "", J: "", K: "" });
@@ -1585,9 +1587,14 @@ export default function App() {
             while (acc[id] >= 1) {
               acc[id] -= 1;
               const audio = audioMapRef.current[id];
-              const bins = audio.binsRef.current;
+              const rawBins = audio.binsRef.current;
               const bandKey = layerBandRef.current[id] ?? "all";
-              const energy01 = audio.bandsRef.current[bandKey] ?? audio.energy;
+              const rawEnergy = audio.bandsRef.current[bandKey] ?? audio.energy;
+              const gain = gainsRef.current[id] ?? 1;
+              const energy01 = Math.min(rawEnergy * gain, 1);
+              const bins = gain > 1.01
+                ? (() => { const b = new Uint8Array(rawBins.length); for (let i = 0; i < b.length; i++) b[i] = Math.min(rawBins[i] * gain, 255); return b; })()
+                : rawBins;
               const y = nextCursor[id] ?? 0;
               const row = brushRowFromAudio({ bins, cols, y, energy01, threshold: thresholds[id] ?? 0.55, tSec, guideRow: imageGuide?.[y], imageMode });
               if (nextGrids === prevGrids) nextGrids = { ...prevGrids };
@@ -2138,7 +2145,7 @@ export default function App() {
       warpColor, cc, gap, imageOpacity, colorAlpha, ccAlpha,
       borderRadius, sizeVariation, posterizeLevels,
       editInvert, stitchInvert,
-      modes, speeds, thresholds, alphas, layerBand, layerColors,
+      modes, speeds, thresholds, alphas, gains, layerBand, layerColors,
       grids,
       imageMode, imgThreshold, imgInvert,
       ovBlend, ovOpacity, ovBrushSize, ovBrushMode,
@@ -2180,6 +2187,7 @@ export default function App() {
         if (s.speeds)     setSpeeds(s.speeds);
         if (s.thresholds) setThresholds(s.thresholds);
         if (s.alphas)     setAlphas(s.alphas);
+        if (s.gains)      setGains(s.gains);
         if (s.layerBand)  setLayerBand(s.layerBand);
         if (s.layerColors) setLayerColors(s.layerColors);
         if (s.grids)      setGrids(s.grids);
@@ -3175,7 +3183,12 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
                     {deviceErr[L.id] && <span style={{ fontSize: 9, color: "#ff6666" }}>{deviceErr[L.id]}</span>}
                   </div>
                 )}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
+                  <label style={label12}>gain
+                    <input type="range" min={1} max={16} step={0.5} value={gains[L.id]}
+                      onChange={(e) => setGains((g) => ({ ...g, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
+                    <span style={muted}>{gains[L.id]}×</span>
+                  </label>
                   <label style={label12}>speed
                     <input type="range" min={1} max={30} value={speeds[L.id]}
                       onChange={(e) => setSpeeds((s) => ({ ...s, [L.id]: Number(e.target.value) }))} style={{ marginTop: 2 }} />
