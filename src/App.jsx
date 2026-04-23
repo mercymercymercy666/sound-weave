@@ -1365,8 +1365,9 @@ const DEFAULT_LAYER_BAND_COLORS = {
   H: { all:"#b0e050", sub:"#334400", bass:"#667700", lmid:"#99aa00", mid:"#b0e050", hi:"#ccee77", air:"#ddeebb" },
   I: { all:"#9966ff", sub:"#330066", bass:"#6600cc", lmid:"#8844ee", mid:"#9966ff", hi:"#bb88ff", air:"#ddbbff" },
   J: { all:"#ffdd44", sub:"#554400", bass:"#886600", lmid:"#bbaa00", mid:"#ffdd44", hi:"#ffee88", air:"#fff5cc" },
+  K: { all:"#ff3366", sub:"#660022", bass:"#990033", lmid:"#cc2255", mid:"#ff3366", hi:"#ff6688", air:"#ffaabb" },
 };
-const IDS = ["A", "B", "C", "D", "F", "G", "H", "I", "J"];
+const IDS = ["A", "B", "C", "D", "F", "G", "H", "I", "J", "K"];
 
 // Poster font options — includes user-requested + stitch-friendly Google Fonts
 const POSTER_FONTS = [
@@ -1390,7 +1391,7 @@ const POSTER_FONTS = [
 
 export default function App() {
   const [layerColors, setLayerColors] = useState(DEFAULT_LAYER_BAND_COLORS);
-  const [layerBand, setLayerBand] = useState({ A:"all", B:"all", C:"all", D:"all", F:"all", G:"all", H:"all", I:"all", J:"all" });
+  const [layerBand, setLayerBand] = useState({ A:"all", B:"all", C:"all", D:"all", F:"all", G:"all", H:"all", I:"all", J:"all", K:"all" });
   const layerBandRef = useRef(layerBand); layerBandRef.current = layerBand;
 
   const LAYERS = useMemo(() => [
@@ -1403,6 +1404,7 @@ export default function App() {
     { id: "H", name: "AUDIO 6", type: "file", color: layerColors.H[layerBand.H ?? "all"] },
     { id: "I", name: "INTERFACE 1", type: "device", color: layerColors.I[layerBand.I ?? "all"] },
     { id: "J", name: "INTERFACE 2", type: "device", color: layerColors.J[layerBand.J ?? "all"] },
+    { id: "K", name: "LOOPBACK",    type: "device", color: layerColors.K[layerBand.K ?? "all"] },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [layerColors, layerBand]);
 
@@ -1467,13 +1469,13 @@ export default function App() {
   const [drawValue, setDrawValue] = useState(1);
   const [mouseDown, setMouseDown] = useState(false);
 
-  const [modes, setModes]           = useState({ A: "off", B: "off", C: "off", D: "off", F: "off", G: "off", H: "off", I: "off", J: "off" });
-  const [speeds, setSpeeds]         = useState({ A: 10,  B: 10,  C: 10,  D: 10,  F: 10,  G: 10,  H: 10,  I: 10,  J: 10 });
-  const [thresholds, setThresholds] = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55, I: 0.55, J: 0.55 });
-  const [alphas, setAlphas]         = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55, I: 0.55, J: 0.55 });
+  const [modes, setModes]           = useState({ A: "off", B: "off", C: "off", D: "off", F: "off", G: "off", H: "off", I: "off", J: "off", K: "off" });
+  const [speeds, setSpeeds]         = useState({ A: 10,  B: 10,  C: 10,  D: 10,  F: 10,  G: 10,  H: 10,  I: 10,  J: 10,  K: 10 });
+  const [thresholds, setThresholds] = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55, I: 0.55, J: 0.55, K: 0.55 });
+  const [alphas, setAlphas]         = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55, I: 0.55, J: 0.55, K: 0.55 });
   const [audioDevices, setAudioDevices] = useState([]);
-  const [deviceSel, setDeviceSel]   = useState({ I: "", J: "" });
-  const [deviceErr, setDeviceErr]   = useState({ I: "", J: "" });
+  const [deviceSel, setDeviceSel]   = useState({ I: "", J: "", K: "" });
+  const [deviceErr, setDeviceErr]   = useState({ I: "", J: "", K: "" });
 
   // Image guide
   const [imageGuide, setImageGuide] = useState(() => makeGrid(80, 60, 0));
@@ -1506,9 +1508,10 @@ export default function App() {
   const audioH = useAudioLayer();
   const audioI = useAudioLayer();
   const audioJ = useAudioLayer();
+  const audioK = useAudioLayer();
   const audioMap = useMemo(
-    () => ({ A: audioA, B: audioB, C: audioC, D: audioD, F: audioF, G: audioG, H: audioH, I: audioI, J: audioJ }),
-    [audioA, audioB, audioC, audioD, audioF, audioG, audioH]
+    () => ({ A: audioA, B: audioB, C: audioC, D: audioD, F: audioF, G: audioG, H: audioH, I: audioI, J: audioJ, K: audioK }),
+    [audioA, audioB, audioC, audioD, audioF, audioG, audioH, audioI, audioJ, audioK]
   );
   const audioMapRef = useRef(audioMap);
   audioMapRef.current = audioMap;
@@ -1560,11 +1563,12 @@ export default function App() {
   useEffect(() => { (async () => { try { if (modes.H === "off") await audioH.stop(); if (modes.H === "file") await audioH.startFileFromElement(audioRefH.current); } catch (e) { console.warn(e); setModes(m => ({ ...m, H: "off" })); } })(); }, [modes.H]); // eslint-disable-line
   useEffect(() => { (async () => { try { if (modes.I === "off") await audioI.stop(); if (modes.I === "device" && deviceSel.I) await audioI.startDevice(deviceSel.I); } catch (e) { console.warn(e); setDeviceErr(er => ({...er, I: e.name+": "+e.message})); setModes(m => ({ ...m, I: "off" })); } })(); }, [modes.I, deviceSel.I]); // eslint-disable-line
   useEffect(() => { (async () => { try { if (modes.J === "off") await audioJ.stop(); if (modes.J === "device" && deviceSel.J) await audioJ.startDevice(deviceSel.J); } catch (e) { console.warn(e); setDeviceErr(er => ({...er, J: e.name+": "+e.message})); setModes(m => ({ ...m, J: "off" })); } })(); }, [modes.J, deviceSel.J]); // eslint-disable-line
+  useEffect(() => { (async () => { try { if (modes.K === "off") await audioK.stop(); if (modes.K === "device" && deviceSel.K) await audioK.startDevice(deviceSel.K); } catch (e) { console.warn(e); setDeviceErr(er => ({...er, K: e.name+": "+e.message})); setModes(m => ({ ...m, K: "off" })); } })(); }, [modes.K, deviceSel.K]); // eslint-disable-line
   // Audio → grid paint loop
   useEffect(() => {
     let raf = null;
     let last = performance.now();
-    const acc = { A: 0, B: 0, C: 0, D: 0, F: 0, G: 0, H: 0, I: 0, J: 0 };
+    const acc = { A: 0, B: 0, C: 0, D: 0, F: 0, G: 0, H: 0, I: 0, J: 0, K: 0 };
 
     const step = (now) => {
       const dt = (now - last) / 1000;
@@ -2098,6 +2102,7 @@ export default function App() {
     if (modes.A === "mic" && audioA.streamRef?.current) streams.push(audioA.streamRef.current);
     if (modes.I === "device" && audioI.streamRef?.current) streams.push(audioI.streamRef.current);
     if (modes.J === "device" && audioJ.streamRef?.current) streams.push(audioJ.streamRef.current);
+    if (modes.K === "device" && audioK.streamRef?.current) streams.push(audioK.streamRef.current);
     [[audioRefB,"B"],[audioRefC,"C"],[audioRefD,"D"],[audioRefF,"F"],[audioRefG,"G"],[audioRefH,"H"]].forEach(([ref,id]) => {
       if (modes[id] === "file" && ref.current?.captureStream) { try { streams.push(ref.current.captureStream()); } catch {} }
     });
@@ -2852,6 +2857,7 @@ function addClip(id,dataUrl,mediaType,filter,mix,label,size){
     if (modes.A === "mic" && audioA.streamRef.current) rawStreams.push(audioA.streamRef.current);
     if (modes.I === "device" && audioI.streamRef.current) rawStreams.push(audioI.streamRef.current);
     if (modes.J === "device" && audioJ.streamRef.current) rawStreams.push(audioJ.streamRef.current);
+    if (modes.K === "device" && audioK.streamRef.current) rawStreams.push(audioK.streamRef.current);
     [[audioRefB,"B"],[audioRefC,"C"],[audioRefD,"D"],[audioRefF,"F"],[audioRefG,"G"],[audioRefH,"H"]].forEach(([ref,id]) => {
       if (modes[id] === "file" && ref.current?.captureStream) { try { rawStreams.push(ref.current.captureStream()); } catch {} }
     });
