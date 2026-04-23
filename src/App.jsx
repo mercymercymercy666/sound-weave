@@ -1393,7 +1393,6 @@ export default function App() {
   const [layerColors, setLayerColors] = useState(DEFAULT_LAYER_BAND_COLORS);
   const [layerBand, setLayerBand] = useState({ A:"all", B:"all", C:"all", D:"all", F:"all", G:"all", H:"all", I:"all", J:"all", K:"all" });
   const layerBandRef = useRef(layerBand); layerBandRef.current = layerBand;
-  const gainsRef = useRef(gains); gainsRef.current = gains;
 
   const LAYERS = useMemo(() => [
     { id: "A", name: "MIC",     type: "mic",  color: layerColors.A[layerBand.A ?? "all"] },
@@ -1475,6 +1474,7 @@ export default function App() {
   const [thresholds, setThresholds] = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55, I: 0.55, J: 0.55, K: 0.55 });
   const [alphas, setAlphas]         = useState({ A: 0.55, B: 0.55, C: 0.55, D: 0.55, F: 0.55, G: 0.55, H: 0.55, I: 0.55, J: 0.55, K: 0.55 });
   const [gains, setGains]           = useState({ A: 1,    B: 1,    C: 1,    D: 1,    F: 1,    G: 1,    H: 1,    I: 1,    J: 1,    K: 1 });
+  const gainsRef = useRef(gains); gainsRef.current = gains;
   const [audioDevices, setAudioDevices] = useState([]);
   const [deviceSel, setDeviceSel]   = useState({ I: "", J: "", K: "" });
   const [deviceErr, setDeviceErr]   = useState({ I: "", J: "", K: "" });
