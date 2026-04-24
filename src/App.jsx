@@ -2183,13 +2183,19 @@ export default function App() {
         if (s.posterizeLevels != null) setPosterizeLevels(s.posterizeLevels);
         if (s.editInvert != null)  setEditInvert(s.editInvert);
         if (s.stitchInvert != null) setStitchInvert(s.stitchInvert);
-        if (s.modes)      setModes(s.modes);
-        if (s.speeds)     setSpeeds(s.speeds);
-        if (s.thresholds) setThresholds(s.thresholds);
-        if (s.alphas)     setAlphas(s.alphas);
-        if (s.gains)      setGains(s.gains);
-        if (s.layerBand)  setLayerBand(s.layerBand);
-        if (s.layerColors) setLayerColors(s.layerColors);
+        if (s.modes)      setModes(prev => ({ ...prev, ...s.modes }));
+        if (s.speeds)     setSpeeds(prev => ({ ...prev, ...s.speeds }));
+        if (s.thresholds) setThresholds(prev => ({ ...prev, ...s.thresholds }));
+        if (s.alphas)     setAlphas(prev => ({ ...prev, ...s.alphas }));
+        if (s.gains)      setGains(prev => ({ ...prev, ...s.gains }));
+        if (s.layerBand)  setLayerBand(prev => ({ ...prev, ...s.layerBand }));
+        if (s.layerColors) setLayerColors(prev => {
+          const merged = { ...prev };
+          for (const id of Object.keys(s.layerColors)) {
+            merged[id] = { ...(DEFAULT_LAYER_BAND_COLORS[id] ?? {}), ...s.layerColors[id] };
+          }
+          return merged;
+        });
         if (s.grids)      setGrids(s.grids);
         if (s.imageMode)  setImageMode(s.imageMode);
         if (s.imgThreshold != null) setImgThreshold(s.imgThreshold);
